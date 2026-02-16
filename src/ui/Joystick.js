@@ -1,45 +1,4 @@
-function toNumber(value, fallback) {
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function normalizePointerInput(pointerOrX, y, pointerId) {
-  if (pointerOrX && typeof pointerOrX === "object") {
-    const xValue = toNumber(pointerOrX.x, toNumber(pointerOrX.clientX, toNumber(pointerOrX.pageX, NaN)));
-    const yValue = toNumber(pointerOrX.y, toNumber(pointerOrX.clientY, toNumber(pointerOrX.pageY, NaN)));
-    const idValue = toNumber(
-      pointerOrX.pointerId,
-      toNumber(pointerOrX.identifier, toNumber(pointerOrX.id, 0))
-    );
-
-    if (!Number.isFinite(xValue) || !Number.isFinite(yValue)) {
-      return null;
-    }
-
-    return {
-      x: xValue,
-      y: yValue,
-      id: idValue
-    };
-  }
-
-  const xValue = toNumber(pointerOrX, NaN);
-  const yValue = toNumber(y, NaN);
-  const idValue = toNumber(pointerId, 0);
-
-  if (!Number.isFinite(xValue) || !Number.isFinite(yValue)) {
-    return null;
-  }
-
-  return {
-    x: xValue,
-    y: yValue,
-    id: idValue
-  };
-}
+import { clamp, normalizePointerInput, toNumber } from "./uiUtils.js";
 
 const DEFAULT_STYLE = {
   baseFill: "rgba(20, 28, 44, 0.3)",

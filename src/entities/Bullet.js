@@ -30,6 +30,7 @@ export class Bullet extends Entity {
     owner = null,
     lifetimeMs = DEFAULT_LIFETIME_MS,
     color = DEFAULT_COLOR,
+    shape = "rect",
   } = {}) {
     const normalizedX = Number(directionX);
     const normalizedY = Number(directionY);
@@ -69,6 +70,7 @@ export class Bullet extends Entity {
     this.ageMs = 0;
     this.dodgeCounted = false;
     this.color = typeof color === 'string' && color.length > 0 ? color : DEFAULT_COLOR;
+    this.shape = shape === "circle" ? "circle" : "rect";
 
     this.setVelocity(this.directionX * this.speed, this.directionY * this.speed);
     this.active = true;
@@ -111,6 +113,7 @@ export class Bullet extends Entity {
     this.lifetimeMs = DEFAULT_LIFETIME_MS;
     this.ageMs = 0;
     this.color = DEFAULT_COLOR;
+    this.shape = "rect";
     this.deactivate();
   }
 
@@ -119,32 +122,24 @@ export class Bullet extends Entity {
       return;
     }
 
-    let renderX = this.x;
-    let renderY = this.y;
-
-    if (camera && typeof camera.worldToScreen === 'function') {
-      const screenPosition = camera.worldToScreen(this.x, this.y);
-      renderX = Number(screenPosition?.x);
-      renderY = Number(screenPosition?.y);
-    } else if (camera) {
-      const cameraX = Number(camera.x);
-      const cameraY = Number(camera.y);
-
-      renderX = this.x - (Number.isFinite(cameraX) ? cameraX : 0);
-      renderY = this.y - (Number.isFinite(cameraY) ? cameraY : 0);
+    const projected = this.projectToScreen(camera);
+    if (!projected) {
+      return;
     }
+    const renderX = projected.x;
+    const renderY = projected.y;
 
-    if (!Number.isFinite(renderX) || !Number.isFinite(renderY)) {
+    ctx.fillStyle = this.color;
+    if (this.shape === "circle" && typeof ctx.beginPath === "function" && typeof ctx.arc === "function") {
+      const radius = Math.max(1, Math.min(this.width, this.height) / 2);
+      const centerX = renderX + this.width / 2;
+      const centerY = renderY + this.height / 2;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.fill();
       return;
     }
 
-    const radius = Math.max(1, Math.min(this.width, this.height) / 2);
-    const centerX = renderX + this.width / 2;
-    const centerY = renderY + this.height / 2;
-
-    ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(renderX, renderY, this.width, this.height);
   }
 }

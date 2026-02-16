@@ -1,83 +1,16 @@
 import * as ButtonModule from "../ui/Button.js";
 import * as ScoreBoardModule from "../ui/ScoreBoard.js";
+import {
+  asNumber,
+  isObject,
+  asPointer,
+  rectContains,
+  callAny,
+  pointerAliases,
+} from "./scenePointerUtils.js";
 
 const ButtonClass = ButtonModule.Button;
 const ScoreBoardClass = ScoreBoardModule.ScoreBoard;
-
-function asNumber(value, fallback = 0) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
-}
-
-function isObject(value) {
-  return Boolean(value) && typeof value === "object";
-}
-
-function asPointer(pointer) {
-  if (!isObject(pointer)) {
-    return null;
-  }
-
-  const x = asNumber(pointer.x, asNumber(pointer.clientX, NaN));
-  const y = asNumber(pointer.y, asNumber(pointer.clientY, NaN));
-  if (!Number.isFinite(x) || !Number.isFinite(y)) {
-    return null;
-  }
-
-  return {
-    x,
-    y,
-    id: pointer.id ?? pointer.pointerId ?? pointer.identifier ?? "primary",
-  };
-}
-
-function rectContains(rect, pointer) {
-  return (
-    pointer.x >= rect.x &&
-    pointer.x <= rect.x + rect.width &&
-    pointer.y >= rect.y &&
-    pointer.y <= rect.y + rect.height
-  );
-}
-
-function callAny(target, names, argsVariants) {
-  if (!isObject(target)) {
-    return { called: false, value: undefined };
-  }
-
-  for (const name of names) {
-    if (typeof target[name] !== "function") {
-      continue;
-    }
-
-    for (const args of argsVariants) {
-      try {
-        const value = target[name](...args);
-        return { called: true, value };
-      } catch {
-        // Try the next signature.
-      }
-    }
-  }
-
-  return { called: false, value: undefined };
-}
-
-function pointerAliases(methodName) {
-  if (methodName === "handlePointerDown") {
-    return ["handlePointerDown", "pointerDown", "onPointerDown"];
-  }
-  if (methodName === "handlePointerMove") {
-    return ["handlePointerMove", "pointerMove", "onPointerMove"];
-  }
-  if (methodName === "handlePointerUp") {
-    return ["handlePointerUp", "pointerUp", "onPointerUp"];
-  }
-  if (methodName === "handlePointerCancel") {
-    return ["handlePointerCancel", "pointerCancel", "onPointerCancel"];
-  }
-  return [methodName];
-}
 
 function copyObject(target, value) {
   if (!isObject(value)) {

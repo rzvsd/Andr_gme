@@ -185,14 +185,51 @@ export class Game {
     this.accumulator += frameTime;
 
     while (this.accumulator >= this.fixedStepMs) {
-      this.update(this.fixedStepMs / 1000);
+      try {
+        this.update(this.fixedStepMs / 1000);
+      } catch (error) {
+        this.handleLoopError(error, "update");
+        return;
+      }
       this.accumulator -= this.fixedStepMs;
     }
 
     const interpolationAlpha = this.accumulator / this.fixedStepMs;
-    this.render(interpolationAlpha);
+    try {
+      this.render(interpolationAlpha);
+    } catch (error) {
+      this.handleLoopError(error, "render");
+      return;
+    }
+
+    if (!this.running) {
+      return;
+    }
 
     this.rafId = window.requestAnimationFrame(this.loop);
+  }
+
+  handleLoopError(error, phase = "unknown") {
+    try {
+      this.eventBus.emit("game:error", {
+        phase,
+        error,
+        scene: this.currentSceneName,
+        sceneObject: this.currentScene,
+      });
+    } catch {
+      // Ignore event bus failures while handling a crash.
+    }
+
+    try {
+      this.stop();
+    } catch {
+      this.running = false;
+      if (this.rafId !== null) {
+        window.cancelAnimationFrame(this.rafId);
+        this.rafId = null;
+      }
+    }
   }
 
   update(deltaSeconds) {

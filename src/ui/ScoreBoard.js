@@ -1,61 +1,10 @@
-function toNumber(value, fallback) {
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function roundedRectPath(ctx, x, y, width, height, radius) {
-  const safeRadius = clamp(radius, 0, Math.min(width, height) / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + safeRadius, y);
-  ctx.lineTo(x + width - safeRadius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
-  ctx.lineTo(x + width, y + height - safeRadius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
-  ctx.lineTo(x + safeRadius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
-  ctx.lineTo(x, y + safeRadius);
-  ctx.quadraticCurveTo(x, y, x + safeRadius, y);
-  ctx.closePath();
-}
-
-function resolveViewportSize(ctx) {
-  const canvas = ctx && ctx.canvas ? ctx.canvas : null;
-  if (!canvas) {
-    return { width: 0, height: 0 };
-  }
-
-  const directWidth = toNumber(canvas.clientWidth, 0);
-  const directHeight = toNumber(canvas.clientHeight, 0);
-  if (directWidth > 0 && directHeight > 0) {
-    return { width: directWidth, height: directHeight };
-  }
-
-  const transform = typeof ctx.getTransform === "function" ? ctx.getTransform() : null;
-  const scaleX = transform && Number.isFinite(transform.a) && Math.abs(transform.a) > 0 ? Math.abs(transform.a) : 1;
-  const scaleY = transform && Number.isFinite(transform.d) && Math.abs(transform.d) > 0 ? Math.abs(transform.d) : 1;
-  return {
-    width: toNumber(canvas.width, 0) / scaleX,
-    height: toNumber(canvas.height, 0) / scaleY
-  };
-}
-
-function pickNumber(source, keys, fallback = 0) {
-  if (!source || typeof source !== "object") {
-    return fallback;
-  }
-
-  for (const key of keys) {
-    const numericValue = Number(source[key]);
-    if (Number.isFinite(numericValue)) {
-      return numericValue;
-    }
-  }
-
-  return fallback;
-}
+import {
+  formatNumber,
+  pickNumber,
+  resolveViewportSize,
+  roundedRectPath,
+  toNumber,
+} from "./uiUtils.js";
 
 const DEFAULT_STYLE = {
   overlayColor: "rgba(3, 8, 18, 0.62)",
@@ -90,11 +39,7 @@ export class ScoreBoard {
   }
 
   static formatValue(value) {
-    const safeValue = Number.isFinite(value) ? value : 0;
-    if (typeof safeValue.toLocaleString === "function") {
-      return safeValue.toLocaleString("en-US");
-    }
-    return String(safeValue);
+    return formatNumber(value);
   }
 
   formatValue(value) {

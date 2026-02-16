@@ -30,6 +30,8 @@ export class SpriteSheet {
     this._ready = false;
     this._error = null;
     this._loadPromise = null;
+    this._loadToken = 0;
+    this._loadingSource = "";
     this._namedFrames = new Map();
   }
 
@@ -38,15 +40,20 @@ export class SpriteSheet {
       return true;
     }
 
-    if (this._loadPromise) {
+    if (this._loadPromise && this._loadingSource === this.source) {
       return this._loadPromise;
     }
 
-    this._loadPromise = new Promise((resolve) => {
+    const loadToken = ++this._loadToken;
+    this._loadingSource = this.source;
+
+    const loadPromise = new Promise((resolve) => {
       if (!this.source || typeof Image === "undefined") {
-        this._ready = false;
-        this._error = new Error("SpriteSheet image loading is unavailable.");
-        this._loadPromise = null;
+        if (loadToken === this._loadToken) {
+          this._ready = false;
+          this._error = new Error("SpriteSheet image loading is unavailable.");
+          this._loadPromise = null;
+        }
         resolve(false);
         return;
       }
@@ -60,6 +67,11 @@ export class SpriteSheet {
           return;
         }
         settled = true;
+
+        if (loadToken !== this._loadToken) {
+          resolve(false);
+          return;
+        }
 
         image.onload = null;
         image.onerror = null;
@@ -99,7 +111,8 @@ export class SpriteSheet {
       }
     });
 
-    return this._loadPromise;
+    this._loadPromise = loadPromise;
+    return loadPromise;
   }
 
   isReady() {

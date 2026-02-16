@@ -1,97 +1,52 @@
 import * as ButtonModule from "../ui/Button.js";
+import { loadSettings, saveSettings } from "../config/settings.js";
+import {
+  asNumber,
+  asPointer,
+  rectContains,
+  isObject,
+  callAny,
+  pointerAliases,
+} from "./scenePointerUtils.js";
 
 const ButtonClass = ButtonModule.Button;
-
-function asNumber(value, fallback = 0) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
-}
-
-function asPointer(pointer) {
-  if (!pointer || typeof pointer !== "object") {
-    return null;
-  }
-
-  const x = asNumber(pointer.x, asNumber(pointer.clientX, NaN));
-  const y = asNumber(pointer.y, asNumber(pointer.clientY, NaN));
-  if (!Number.isFinite(x) || !Number.isFinite(y)) {
-    return null;
-  }
-
-  return {
-    x,
-    y,
-    id: pointer.id ?? pointer.pointerId ?? pointer.identifier ?? "primary",
-  };
-}
-
-function rectContains(rect, pointer) {
-  return (
-    pointer.x >= rect.x &&
-    pointer.x <= rect.x + rect.width &&
-    pointer.y >= rect.y &&
-    pointer.y <= rect.y + rect.height
-  );
-}
-
-function isObject(value) {
-  return Boolean(value) && typeof value === "object";
-}
-
-function callAny(target, names, argsVariants) {
-  if (!isObject(target)) {
-    return { called: false, value: undefined };
-  }
-
-  for (const name of names) {
-    if (typeof target[name] !== "function") {
-      continue;
-    }
-
-    for (const args of argsVariants) {
-      try {
-        const value = target[name](...args);
-        return { called: true, value };
-      } catch {
-        // Try the next signature.
-      }
-    }
-  }
-
-  return { called: false, value: undefined };
-}
-
-function pointerAliases(methodName) {
-  if (methodName === "handlePointerDown") {
-    return ["handlePointerDown", "pointerDown", "onPointerDown"];
-  }
-  if (methodName === "handlePointerMove") {
-    return ["handlePointerMove", "pointerMove", "onPointerMove"];
-  }
-  if (methodName === "handlePointerUp") {
-    return ["handlePointerUp", "pointerUp", "onPointerUp"];
-  }
-  if (methodName === "handlePointerCancel") {
-    return ["handlePointerCancel", "pointerCancel", "onPointerCancel"];
-  }
-  return [methodName];
-}
 
 export class MenuScene {
   constructor() {
     this.width = 1;
     this.height = 1;
     this.playButton = null;
+    this.soundButton = null;
+    this.musicButton = null;
     this.buttons = [];
     this.activePointerId = null;
     this.activeButton = null;
+    this.settings = loadSettings();
   }
 
   onEnter(game, transition) {
+    this.settings = loadSettings();
     this.playButton = this.createButton("Play", () => {
-      game.switchScene("game", { restart: true });
+      game.switchScene("versus", { restart: true });
     });
-    this.buttons = [this.playButton];
+    this.soundButton = this.createButton("", () => {
+      this.settings = saveSettings({
+        soundEnabled: !Boolean(this.settings.soundEnabled),
+      });
+      game.audioManager?.setEnabled?.(this.settings.soundEnabled);
+      this.syncSettingsButtons();
+      game.eventBus?.emit?.("ui_click", { source: "toggle_sound" });
+    });
+    this.musicButton = this.createButton("", () => {
+      this.settings = saveSettings({
+        musicEnabled: !Boolean(this.settings.musicEnabled),
+      });
+      game.musicManager?.setEnabled?.(this.settings.musicEnabled);
+      this.syncSettingsButtons();
+      game.eventBus?.emit?.("ui_click", { source: "toggle_music" });
+    });
+    this.syncSettingsButtons();
+    this.buttons = [this.playButton, this.soundButton, this.musicButton];
     this.activePointerId = null;
     this.activeButton = null;
     this.onResize(
@@ -117,8 +72,28 @@ export class MenuScene {
     const buttonHeight = Math.min(72, Math.max(54, this.height * 0.085));
     const buttonX = (this.width - buttonWidth) * 0.5;
     const buttonY = this.height * 0.58;
+    const settingsWidth = Math.min(220, Math.max(150, this.width * 0.22));
+    const settingsHeight = Math.min(56, Math.max(44, this.height * 0.064));
+    const settingsY = buttonY + buttonHeight + Math.max(14, this.height * 0.025);
+    const settingsGap = Math.max(12, this.width * 0.02);
 
     this.setButtonRect(this.playButton, buttonX, buttonY, buttonWidth, buttonHeight);
+    if (this.width >= 560) {
+      const total = settingsWidth * 2 + settingsGap;
+      const leftX = (this.width - total) * 0.5;
+      this.setButtonRect(this.soundButton, leftX, settingsY, settingsWidth, settingsHeight);
+      this.setButtonRect(this.musicButton, leftX + settingsWidth + settingsGap, settingsY, settingsWidth, settingsHeight);
+    } else {
+      const settingsX = (this.width - settingsWidth) * 0.5;
+      this.setButtonRect(this.soundButton, settingsX, settingsY, settingsWidth, settingsHeight);
+      this.setButtonRect(
+        this.musicButton,
+        settingsX,
+        settingsY + settingsHeight + Math.max(10, this.height * 0.015),
+        settingsWidth,
+        settingsHeight,
+      );
+    }
   }
 
   update(dt, game) {
@@ -284,6 +259,29 @@ export class MenuScene {
     };
 
     return button;
+  }
+
+  syncSettingsButtons() {
+    const soundLabel = this.settings.soundEnabled ? "SFX: ON" : "SFX: OFF";
+    const musicLabel = this.settings.musicEnabled ? "MUSIC: ON" : "MUSIC: OFF";
+    this.setButtonLabel(this.soundButton, soundLabel);
+    this.setButtonLabel(this.musicButton, musicLabel);
+  }
+
+  setButtonLabel(button, label) {
+    if (!isObject(button)) {
+      return;
+    }
+    if (isObject(button.__sceneButton)) {
+      button.__sceneButton.label = label;
+    }
+    if ("label" in button) {
+      button.label = label;
+    }
+    if ("text" in button) {
+      button.text = label;
+    }
+    callAny(button, ["setLabel", "setText"], [[label]]);
   }
 
   setButtonRect(button, x, y, width, height) {

@@ -1,4 +1,5 @@
 import { Enemy, ENEMY_TYPES } from '../entities/Enemy.js';
+import { emitEvent } from './systemUtils.js';
 
 const DEFAULT_SPAWN_POINTS = Object.freeze([
   { x: -64, y: 0 },
@@ -38,14 +39,6 @@ const toNonNegativeNumber = (value, fallback = 0) => {
 const resolveEnemyType = (value) => (
   VALID_ENEMY_TYPES.has(value) ? value : ENEMY_TYPES.GRUNT
 );
-
-const emitEvent = (eventBus, eventName, payload) => {
-  if (!eventBus || typeof eventBus.emit !== 'function') {
-    return;
-  }
-
-  eventBus.emit(eventName, payload);
-};
 
 const asSpawnArray = (value, fallback = []) => (
   Array.isArray(value) && value.length > 0 ? value : fallback
@@ -255,17 +248,20 @@ export class SpawnSystem {
   }
 
   #recycleInactiveEnemies(enemies, enemyPool) {
-    for (let index = enemies.length - 1; index >= 0; index -= 1) {
-      const enemy = enemies[index];
-      if (!enemy || enemy.active !== false) {
+    let writeIndex = 0;
+    for (let readIndex = 0; readIndex < enemies.length; readIndex += 1) {
+      const enemy = enemies[readIndex];
+      if (enemy && enemy.active !== false) {
+        enemies[writeIndex] = enemy;
+        writeIndex += 1;
         continue;
       }
 
-      if (enemyPool && typeof enemyPool.release === 'function') {
+      if (enemyPool && typeof enemyPool.release === 'function' && enemy) {
         enemyPool.release(enemy);
       }
-
-      enemies.splice(index, 1);
     }
+
+    enemies.length = writeIndex;
   }
 }

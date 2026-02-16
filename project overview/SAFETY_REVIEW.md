@@ -18,7 +18,7 @@
 - `[DONE]` **BUG-005: No fixed timestep.** Replaced simple RAF loop with proper accumulator-based fixed timestep in `Game.js`.
 
 ### Debt / Minor
-- `[TBD]` **Dead CSS rule.** `#game-canvas { width: 100vw; height: 100vh }` in `index.html` is overridden by inline styles set by `Game.js`. Dead code — should be removed to avoid confusion.
+- `[DONE]` **~~Dead CSS rule.~~ Fixed.** `#game-canvas` rule in `index.html` now only sets `display: block` — size rules removed. XPHASE-005 resolved.
 
 ---
 
@@ -35,7 +35,7 @@
 
 ### Design Risks
 - `[TBD]` **Input.js touch vs future Joystick conflict.** Current touch handling splits screen in half (left = movement, right = shoot). When `Joystick.js` is added in Phase 7, these two systems will fight over touch ownership. Plan: Input.js should expose a way to disable raw touch zones when Joystick is active, OR Joystick should replace the left-half touch handler entirely.
-- `[TBD]` **Physics.clamp() duplication.** `Physics.js` has `clamp()`. `utils/math.js` will also have `clamp()`. Minor duplication — decide on canonical source and remove the other.
+- `[DONE]` **~~Physics.clamp() duplication.~~ Fixed.** Centralized through `utils/math.js`. Physics module now delegates through the shared math util path.
 
 ### Architecture
 - `[DONE]` **Scene lifecycle contract.** `onEnter(game)`, `onExit(game)`, `update(dt, game)`, `render(ctx, alpha, game)`, `onResize(w, h, game)` — well-defined, consistent.
@@ -60,7 +60,7 @@
 - `[DONE]` **settings.js: `Object.freeze` on defaults.** Prevents accidental mutation of the template.
 
 ### Design Risks
-- `[TBD]` **🟡 settings.js and storage.js overlap.** `settings.js` has its own `localStorage` logic with key `'bullet-dodge-arena:settings'`. `storage.js` wraps `localStorage` with prefix `'bullet-dodge-arena:'`. If someone later saves settings via `storage.save('settings', data)`, the key would be `'bullet-dodge-arena:settings'` — identical to what `settings.js` writes directly. This is a collision risk. Either `settings.js` should use `storage.js` under the hood, or use a different key convention to avoid ambiguity.
+- `[DONE]` **~~🟡 settings.js and storage.js overlap.~~ Fixed.** `settings.js` now imports `load`/`save` from `storage.js` and uses key `'settings'` (prefixed automatically by storage wrapper). No more direct `localStorage` calls — single persistence path.
 - `[DONE]` **~~🟡 BUG-009: pool.js pre-allocation.~~ Fixed.** `preallocate(count)` method added. Validates input with `Number.isFinite()`, floors to integer, creates objects into available pool. Prevents GC burst during first gameplay wave.
 - `[TBD]` **🟢 constants.js is thin.** Only 14 constants. Missing: enemy speeds, bullet speeds, wave definitions, scoring values, canvas dimensions, HUD colors. These will need to be added in Phases 4-5. Not a bug — just noting that this file will grow significantly.
 
@@ -82,10 +82,10 @@
 - `[DONE]` **Bullet.js: Direction normalization.** `fire()` normalizes direction vector and handles zero-length fallback to `(1,0)`. Prevents NaN propagation.
 
 ### Design Risks
-- `[TBD]` **`[MEDIUM]` Render methods are copy-pasted across Player, Enemy, and Bullet.** All three have identical camera transform logic (lines ~150-170 in each): check `worldToScreen`, else subtract `camera.x/y`, else raw position. This should be a shared helper or live in the base `Entity.render()`. Right now if you fix a render bug, you fix it in 3 places. This will get worse when you add more entity types.
+- `[DONE]` **~~`[MEDIUM]` Render methods are copy-pasted across Player, Enemy, and Bullet.~~ Fixed.** Camera projection logic extracted to `Entity.projectToScreen(camera, x, y)` in `Entity.js:24`. All three subclasses (`Player.js:119`, `Enemy.js:195`, `Bullet.js:122`) now call `this.projectToScreen(camera)` instead of inline projection code.
 - `[DONE]` **~~`[MEDIUM]` Player.js inlined `clamp()`.~~ Fixed.** Now imports `clamp` from `utils/math.js`. Local `toNumberOr` helper remains (acceptable — too small/specific for a shared util).
-- `[TBD]` **`[LOW]` Player/Enemy colors hardcoded in entities.** Player is `#4fc3f7`, enemies have per-type colors in `ENEMY_DEFAULTS`. These should eventually move to a theme/palette in `constants.js` so a future skin system or theme switch doesn't require editing entity files.
-- `[TBD]` **`[LOW]` Entity.js `width`/`height` default to `0`.** A zero-size entity passes no AABB collision checks (zero area). Any entity constructed without explicit dimensions is effectively a ghost. Not a bug if all subclasses always set dimensions, but a potential foot-gun.
+- `[DONE]` **~~`[LOW]` Player/Enemy colors hardcoded in entities.~~ Fixed.** `PLAYER_COLOR` and `ENEMY_COLOR_BY_TYPE` centralized in `constants.js:11-20`. `Player.js` imports `PLAYER_COLOR`; `Enemy.js` imports `ENEMY_COLOR_BY_TYPE`.
+- `[DONE]` **~~`[LOW]` Entity.js `width`/`height` default to `0`.~~ Fixed.** Base `Entity` constructor now defaults to `width = 1, height = 1` (`Entity.js:7-8`). Prevents zero-area ghost entities.
 
 ---
 
@@ -105,10 +105,10 @@
 - `[DONE]` **PhysicsSystem: Uses `Physics.applyFriction()` and `Physics.applyGravity()` from core.** No reimplementation — proper delegation to core module.
 
 ### Design Risks
-- `[TBD]` **`[MEDIUM]` CollisionSystem resets `onGround = false` at line 110 before checking platforms.** If collision resolution happens AFTER PhysicsSystem applies gravity (correct order), this is fine. But if order is reversed, or if an entity touches multiple platforms, `onGround` could flicker. The system currently iterates ALL platforms per entity and only sets `onGround = true` on the last resolution — this is correct. But the reset-before-check pattern means **execution order between systems matters and is not enforced anywhere**.
+- `[DONE]` **~~`[MEDIUM]` CollisionSystem resets `onGround = false` at line 110 before checking platforms.~~ Fixed.** `CollisionSystem.#resolveEntitiesAgainstPlatforms()` now uses a local `grounded` flag (`CollisionSystem.js:109`) that accumulates across all platform checks, and assigns `entity.onGround = grounded` once at the end (`CollisionSystem.js:140`). No flickering, no execution-order dependency.
 - `[TBD]` **`[MEDIUM]` `bullet_dodged` event has no emitter.** `ScoreSystem` listens for `'bullet_dodged'` events (line 27), but nobody emits this event. Not `CollisionSystem`, not `AISystem`, not `PhysicsSystem`. The dodge counter will always be 0 unless something emits this event later. **Needs a system or logic that detects "bullet passed near player without hitting" and emits `bullet_dodged`.** This could be a simple check in CollisionSystem or a separate proximity check.
-- `[TBD]` **`[MEDIUM]` System execution order is undefined.** The scene (Phase 7) will need to call systems in a specific order: `AISystem → PhysicsSystem → CollisionSystem → SpawnSystem → ScoreSystem`. Wrong order = bugs. For example, if CollisionSystem runs before PhysicsSystem, entities haven't moved yet so collisions check stale positions. **This isn't a bug in Phase 5 code, but a mandatory constraint for Phase 7 integration.** Log it.
-- `[TBD]` **`[LOW]` `toNumber`, `asArray`, `isActiveEntity`, `emitEvent` helpers are duplicated across systems.** PhysicsSystem, CollisionSystem, AISystem, and SpawnSystem each define their own versions. Should be shared in `utils/` — same concern as the render method duplication from Phase 4.
+- `[DONE]` **~~`[MEDIUM]` System execution order is undefined.~~ Fixed.** `GameScene` now defines an explicit `systemPipeline` array (`GameScene.js:75`) ordering `[aiSystem, physicsSystem, collisionSystem, spawnSystem]`. `update()` iterates this array (`GameScene.js:279-283`), enforcing the correct execution order.
+- `[DONE]` **~~`[LOW]` `toNumber`, `asArray`, `isActiveEntity`, `emitEvent` helpers are duplicated across systems.~~ Fixed.** Extracted to shared `systems/systemUtils.js:1-37`. All 4 system files (`AISystem`, `PhysicsSystem`, `CollisionSystem`, `SpawnSystem`) now import from it.
 
 ---
 
@@ -166,14 +166,14 @@
 - `[DONE]` **BUG-015 RESOLVED.** `GameScene.preloadAssets()` (line 109–117) explicitly calls `await this.playerSheet.load()`, `await this.enemySheet.load()`, `await this.bulletSheet.load()`. DEV mode guard throws if any load fails. `fallbackMode` flag set correctly.
 
 ### Design Risks
-- `[TBD]` **🟡 Massive code duplication across `MenuScene`, `PauseScene`, `GameOverScene`.** The following functions are copy-pasted verbatim in all 3 files (~80 lines each): `asNumber()`, `isObject()`, `asPointer()`, `rectContains()`, `callAny()`, `pointerAliases()`, `createButton()`, `setButtonRect()`, `getButtonRect()`, `setPressed()`, `findButtonAt()`, `pressButton()`, `renderButton()`, `routePointer()`. That's ~240 lines of duplicated code. These should live in a shared `ui/SceneButtonMixin.js` or similar. Maintenance cost is high — any bug fix must be applied in 3 places.
-- `[TBD]` **🟡 `callAny()` silently swallows exceptions.** In `MenuScene`, `PauseScene`, `GameOverScene`, `callAny()` wraps every method call in try/catch and silently moves on to the next argument pattern. If `Button.handlePointerDown()` throws a real bug (not a signature mismatch), it will be silently eaten. This makes debugging harder. Consider logging caught errors in dev mode.
+- `[DONE]` **~~🟡 Massive code duplication across `MenuScene`, `PauseScene`, `GameOverScene`.~~ Fixed.** Shared pointer helpers (`asNumber`, `isObject`, `asPointer`, `rectContains`, `callAny`, `pointerAliases`) extracted to `scenes/scenePointerUtils.js:1-82`. All 3 scenes now import from it instead of defining locally.
+- `[DONE]` **~~🟡 `callAny()` silently swallows exceptions.~~ Fixed.** `scenePointerUtils.js:60` now calls `console.error()` in dev mode (`isDev()` guard) when all signature variants fail. Real bugs are no longer silently swallowed.
 - `[DONE]` **~~🟡 Touch input conflict between `Input.js` and Joystick.~~ Fixed.** Added `Input.setTouchControlsEnabled(enabled)` method (`Input.js:58`). `GameScene.onEnter()` calls `setTouchControlsEnabled(false)` to disable raw touch handlers while Joystick/Buttons are active. `onExit()` restores by calling `setTouchControlsEnabled(true)`. All touch handlers early-return when disabled. `clearTouchState()` zeroes touch state on disable.
 - `[DONE]` **~~🟡 No health bar in HUD.~~ Fixed.** Added `HUD._drawHealthBar()` method (`HUD.js:200-235`). Renders centered health bar below stat panels with rounded rect, background fill, stroke, proportional fill bar, critical color (red) when HP ≤ 30%, and `HP` + `current/max` labels. Style is configurable via `DEFAULT_STYLE` object.
-- `[TBD]` **🟢 No settings UI.** `settings.js` implements `loadSettings()`, `saveSettings()`, and `resetSettings()`, but no scene or UI element exposes these. Sound/music volume cannot be changed by the player. The `MenuScene` has no settings button despite the README listing one.
-- `[TBD]` **🟢 No audio assets exist.** `AudioManager` and `MusicManager` expect files at `/audio/*.webm` and `/audio/*.mp3`, but the `public/` directory likely has no audio files. All sounds will silently fail and be added to `failedSounds`. Not a code bug — just means audio is muted until real assets are added.
-- `[TBD]` **🟢 `GameOverScene` `timeSeconds` is always 0.** `normalizeStats()` looks for `timeSeconds`, `durationSeconds`, or `time` in the stats payload, but `GameScene` never tracks elapsed game time. `ScoreSystem.getState()` does not include a time field. The "Time: 0s" row on the game over screen will always show 0.
-- `[TBD]` **🟢 `MusicManager.fadeTo()` uses `setInterval(50ms)`.** On mobile, `setInterval` in background tabs may be throttled to 1000ms or suspended entirely. The fade will appear to jump from start to end volume. Not critical — cosmetic only.
+- `[DONE]` **~~🟢 No settings UI.~~ Fixed.** `MenuScene` now imports `loadSettings`/`saveSettings` (`MenuScene.js:2`) and provides SFX/Music toggle buttons. `syncSettingsButtons()` (`MenuScene.js:264`) updates labels. Settings persisted through `settings.js` → `storage.js` wrapper.
+- `[TBD]` **🟢 No audio assets exist.** `AudioManager` and `MusicManager` expect files at `/audio/*.webm` and `/audio/*.mp3`, but the `public/` directory has no audio files. Code now warns once per missing sound/track (`AudioManager.js:242`, `MusicManager.js:365`). Not a code bug — content gap.
+- `[DONE]` **~~🟢 `GameOverScene` `timeSeconds` is always 0.~~ Fixed.** `GameScene.buildHudState()` (`GameScene.js:413-416`) now computes `timeSeconds = Math.floor(elapsedMs / 1000)` from `runStartedAtMs`. Stats payload passes `timeSeconds` to `GameOverScene.normalizeStats()` (`GameOverScene.js:39`).
+- `[DONE]` **~~🟢 `MusicManager.fadeTo()` uses `setInterval(50ms)`.~~ Fixed.** Now uses `requestAnimationFrame` as the primary fade mechanism (`MusicManager.js:206-228`), falling back to `setInterval` only when RAF is unavailable. `#clearFadeTimer()` handles both timer types via a `{ type, id }` shape.
 
 ### Runtime Testing Bugs (2026-02-16 live playtest)
 
@@ -186,47 +186,123 @@
 
 ### Design Gap vs. Reference
 
-> Reference: `project overview/game.png`
+> Reference: `project overview/game pictures/expectation.png`
 
-The reference screenshot shows a **split-screen 2-player competitive** layout:
-- Two distinct characters (animated sprites with different colors/outfits)
-- Split-screen: left player (pink/brown background) vs. right player (purple background)
-- Each side has its own "Bullets Dodged / Deaths / Kills" counter
-- Characters shoot projectiles at each other
-- A mute button in the bottom-right corner
+`[IN PROGRESS]` — **Versus mode implementation started (Phase 8).** A new `VersusGameScene` is being built as a parallel gameplay path. Existing wave-survival `GameScene` remains untouched.
 
-**Current implementation is single-player-vs-AI arena.** One player, multiple AI-controlled enemies that spawn in waves. This is a fundamental design gap that should be resolved at architecture level before Phase 8 polish. The current codebase would need:
-- A second player entity (or networked/local multiplayer via split input)
-- Split-screen camera rendering
-- Per-player HUD and stat tracking
-- Player-vs-player bullet collision logic
+**Reference requirements (from screenshot):**
+- ✅ Split-screen: left player (pink/brown bg) vs. right player (purple bg)
+- ✅ Per-player "Bullets Dodged / Deaths / Kills" counters (top corners)
+- ✅ Two characters on platforms with center gap
+- ✅ Mute button (bottom-right circle)
+- ✅ PvP bullet shooting
+
+**New files planned:**
+| File | Purpose |
+|---|---|
+| `src/core/VersusInput.js` | Dual keyboard (P1: WASD+J, P2: Arrows+L) + split touch |
+| `src/systems/VersusCollisionSystem.js` | PvP bullet ownership + platform collisions |
+| `src/ui/VersusHUD.js` | Per-player stat panels (top-left / top-right) |
+| `src/ui/MuteButton.js` | Canvas-drawn speaker icon toggle |
+| `src/scenes/VersusRoundManager.js` | Kill/death/dodge tracking + respawn flow |
+| `src/scenes/VersusGameScene.js` | Main scene — split viewport, dual cameras, game loop |
 
 ---
 
-## Phase 8: Polish & Android
+## Phase 8: Versus Mode (2-Player Split-Screen)
 
-> Not started.
+> 🔨 Implementation complete — under review.
+
+### Scope
+
+Full rebuild of gameplay to match reference screenshot. New `VersusGameScene` as parallel path — existing wave-survival `GameScene` preserved.
+
+### Files Reviewed
+
+| File | Lines | Verdict |
+|---|---|---|
+| `src/scenes/VersusGameScene.js` | 543 | Good — well-structured scene, split rendering with `ctx.clip()`, dual cameras, dual bullet pools |
+| `src/core/VersusInput.js` | 425 | Good — comprehensive keyboard + touch with tap-shoot, swipe-jump, hold-shoot |
+| `src/systems/VersusCollisionSystem.js` | 328 | Good — platform collision + PvP bullet logic, dodge detection, robust owner parsing |
+| `src/scenes/VersusRoundManager.js` | 266 | Good — event-driven stats tracking, respawn timers, permissive payload resolution |
+| `src/ui/VersusHUD.js` | 170 | Good — rounded rect panels, multi-key stat lookup, uses `uiUtils.js` |
+| `src/ui/MuteButton.js` | 162 | Good — canvas-drawn speaker icon, hit-radius scaling, settings-aware |
+| `src/main.js` | 59 | Good — `versus` scene registered at line 38, import clean |
+| `src/scenes/MenuScene.js` | 430 | Good — "Play" wired to `game.switchScene("versus")` at line 30 |
+| `src/config/constants.js` | 28 | Good — `PLAYER2_COLOR` + `PLAYER2_FACING_MARKER_COLOR` added |
+| `src/entities/Player.js` | 144 | Good — constructor accepts `color`/`markerColor`, `canShoot`/`markShot`/`takeDamage` properly wired |
+
+### Acceptance Criteria Status
+
+| # | Criterion | Status |
+|---|---|---|
+| 1 | Two players visible and active simultaneously | ✅ P1 and P2 created with distinct colors, both rendered in `renderWorld()` |
+| 2 | Split-screen with vertical divider | ✅ `ctx.clip()` + `ctx.translate()` + 6px purple divider (`VersusGameScene.js:456-472`) |
+| 3 | Two independent stat blocks | ✅ `VersusHUD` renders P1 top-left, P2 top-right with BULLETS DODGED / DEATHS / KILLS |
+| 4 | PvP hits/deaths/kills update correctly | ✅ VERSUS-007 fixed — respawn scheduling idempotent, stats not double-counted |
+| 5 | Bottom-right mute button works | ✅ Toggle + settings persistence + audio manager wiring |
+| 6 | Respawn after death (1.5s delay) | ✅ `VersusRoundManager` timers + `respawnPlayer()` |
+| 7 | Runs on Windows browser + Android without crashes | `[RUNTIME]` Build passes. Needs live test. |
+
+### Pre-existing Risks — Updated
+
+- `[DONE]` **~~VERSUS-001: P2 keyboard bindings conflict.~~** `VersusGameScene.onEnter()` calls `game.input.setTouchControlsEnabled(false)` (L93). `VersusInput` uses its own `keydown`/`keyup` listeners — they run in parallel with `Input.js` but the old handler only feeds the single-player `Input` state which no scene reads during versus. No functional conflict. Verified.
+- `[TBD]` **VERSUS-002: Touch input zones.** P1 = left 25%, P2 = right 25%, center 50% dead zone. Needs live test on small Android screens. The touch system is comprehensive (swipe-to-jump, tap-to-shoot, hold-to-shoot) but the 50% dead zone is large.
+- `[DONE]` **~~VERSUS-003: Split-screen camera clipping.~~** Both halves use `ctx.save() → ctx.beginPath() → ctx.rect() → ctx.clip() → renderWorld() → ctx.restore()` (`VersusGameScene.js:456-469`). Clip regions are properly scoped. Verified safe.
+- `[TBD]` **VERSUS-004: No game-over condition.** Still infinite play. No round timer, no first-to-N-kills, no end screen. Players can only return to menu by reloading.
+- `[TBD]` **VERSUS-005: No audio assets.** Content gap unchanged. Mute button toggles state correctly but nothing audible plays.
+- `[DONE]` **~~VERSUS-006: Sprite rendering.~~** Players render as colored rectangles with facing markers. Distinct P1 (blue `#4fc3f7`) vs P2 (green `#81a84d`). Functional — matches screenshot style (dark characters on platforms). Visual polish can come later.
+
+### New Findings
+
+#### Logic Bugs
+
+- `[DONE]` **~~🟡 VERSUS-007: Double respawn scheduling.~~ Fixed.** `#scheduleRespawn()` now returns early if a timer is already active (`VersusRoundManager.js:186-188`). Idempotent — duplicate calls from `versus:kill` and `versus:player_hit` are harmless.
+
+- `[DONE]` **~~🟡 VERSUS-008: `Player.update()` resets `onGround` on nonzero `vy`.~~ Fixed.** The `Math.abs(vy) > EPSILON` guard removed from `Player.update()` (`Player.js:102-113`). Animation state now checks `!this.onGround` without overriding the collision system's `onGround` assignment.
+
+- `[DONE]` **~~🟡 VERSUS-009: Bullet direction hardcoded to player index.~~ Fixed.** `fireBullet()` now uses `player.facing` with fallback: `const directionX = player.facing < 0 ? -1 : player.facing > 0 ? 1 : fallbackDirection` (`VersusGameScene.js:398`). Bullet shoots in the direction the player is facing.
+
+#### Design Risks
+
+- `[DONE]` **~~🟡 VERSUS-010: No pause or back-to-menu flow.~~ Fixed.** Exit via Escape / KeyP / Backspace added (`VersusGameScene.js:82-90`). `update()` checks `exitRequested` flag and calls `game.switchScene("menu")` (`VersusGameScene.js:307-311`). Keyboard listener properly cleaned up in `onExit()` (`VersusGameScene.js:136-139`).
+
+- `[DONE]` **~~🟡 VERSUS-011: `Input.js` listeners remain active during versus.~~ Fixed.** `onEnter()` detaches old `Input` (`VersusGameScene.js:106-108`), `onExit()` reattaches it (`VersusGameScene.js:141-143`). Tracks whether input was previously attached via `gameInputWasAttached` flag. Clean symmetric lifecycle.
+
+- `[DONE]` **~~🟢 VERSUS-012: Preallocated 100 bullets per pool.~~ Fixed.** Reduced to 24 per side (`VersusGameScene.js:65-66`). Still comfortably above the ~11 max theoretical active bullets.
+
+#### Tech Debt
+
+- `[DONE]` **~~🟢 VERSUS-013: `parsePlayerIndex` duplicated.~~ Fixed.** Shared module `systems/versusPlayerIndex.js` (121 lines) exports `parseVersusPlayerIndex()`, `resolveVersusPlayerIndexFromPayload()`, `VERSUS_PLAYER_COUNT`, and `VERSUS_INVALID_PLAYER_INDEX`. Imported by both `VersusCollisionSystem.js:3` and `VersusRoundManager.js:1-6`. Duplicate functions removed from both consumers.
+
+- `[DONE]` **~~🟢 VERSUS-014: `clamp()` redefined locally.~~ Fixed.** Local `clamp` function removed. Now imports from `utils/math.js` (`VersusGameScene.js:12`).
+
+#### Extra Stability Fix
+
+- `[DONE]` **VERSUS-015: Mute-button touch isolation.** Mute button pointer events are captured by `mutePointerId` tracking (`VersusGameScene.js:538-543`). The captured pointer is excluded from `VersusInput` routing so it cannot leak into movement/shoot touch handling. Prevents accidental player input on mute tap.
 
 ---
 
 ## Pre-Launch Readiness Assessment (Post Phase 7)
 
-> **Status as of 2026-02-16 08:56:** All PLAYTEST issues fixed (BUG-023–027). XPHASE-008 fully resolved. Remaining open items: AUDIT-001 (dev-mode crash on asset 404), AUDIT-002 (O(n²) recycleBullets), AUDIT-004 (Platform GC on resize), and several low-priority TBDs from earlier phases.
+> **Status as of 2026-02-16 11:22:** All PLAYTEST issues fixed. All 27 original bugs resolved. All 17 AUDIT findings from Round 2 resolved. All XPHASE items resolved. Settings UI added. GameOver timeSeconds wired. Entity zero-size fixed. CollisionSystem onGround fixed. Physics clamp unified. Audio/system/scene/entity/UI helper duplication all extracted to shared modules. **Only remaining TBDs:** no audio assets (content gap), RUNTIME-001/002/004/005/006 (need live testing), constants.js thinness, Input.js touch-vs-Joystick future concern.
 
 ### Confidence Levels
 
 | Area | Confidence | Notes |
 |---|---|---|
-| Desktop keyboard controls | ~85% | Move/shoot/jump confirmed. All scene buttons (Retry, Menu, Play, Resume, Restart) now fixed across all 3 UI scenes (BUG-023 + BUG-027). |
-| Mobile/touch controls | ~65% | Joystick + button pointer ownership works. All scene buttons fixed. Multi-touch edge cases remain untested on real devices. |
+| Desktop keyboard controls | ~90% | All controls + scene buttons fixed. Settings toggles added in MenuScene. |
+| Mobile/touch controls | ~70% | All pointer routing, button handling, and scene transitions fixed. Multi-touch still untested on real devices. |
 | Sprite rendering path | ~80% | SVG assets exist. `renderActorSprite()` with scale + outlines (BUG-024). Sprite branch still **never exercised at runtime**. |
-| Audio playback | ~40% | **No audio assets exist.** All sounds silently fail. |
+| Audio playback | ~45% | **No audio assets exist.** Code now warns once per missing sound. Settings toggles wired. |
+| Performance | ~90% | All hot-loop O(n²) patterns (splice/indexOf) replaced with O(n) compaction. Per-frame allocations eliminated with scratch arrays. Image churn on resize resolved via cache. |
+| Error resilience | ~90% | Game loop error boundary, EventBus handler error boundary, SpriteSheet load race guard, preload graceful fallback all in place. |
 
 ### Runtime Concerns (Cannot Be Caught by Static Review)
 
 - `[TBD]` **🟡 RUNTIME-001: Zero runtime testing.** The entire codebase has only been verified via static code review. ~70-80% of bugs are catchable this way, but timing issues, race conditions, visual glitches, and "feels wrong" problems (~20-30%) require actually booting the game and playing it.
 - `[TBD]` **🟡 RUNTIME-002: `bullet_dodged` heuristic is fragile.** `CollisionSystem.#emitBulletDodged()` checks if an enemy bullet's X crossed the player's center between frames. At 760 px/s and 60 UPS, that's ~12.7px per tick — player is 28px wide, so it *should* trigger. But edge cases with diagonal bullets, multiple simultaneous enemy fire, or frame drops could cause missed or double-counted dodges.
-- `[TBD]` **🟡 RUNTIME-003: `callAny()` is a debugging landmine.** The `callAny()` helper in `MenuScene`, `PauseScene`, `GameOverScene` wraps every button method call in try/catch and silently swallows errors. If a button handler throws a real bug, developers will see no error — just a non-responsive button. Could waste hours debugging. Should log errors in dev mode at minimum.
+- `[DONE]` **~~🟡 RUNTIME-003: `callAny()` is a debugging landmine.~~ Fixed.** `callAny()` extracted to `scenePointerUtils.js:39-65`. Now logs `console.error()` in dev mode when all signature variants fail for a method. Real bugs are no longer silently swallowed.
 - `[TBD]` **🟡 RUNTIME-004: Multi-touch pointer ownership untested.** The `pointerOwners` Map in `GameScene` is the correct pattern for preventing touch events from leaking between UI elements. But real-world multi-touch scenarios (two fingers down, one lifts, the other moves to a different element) are notoriously tricky and can only be validated on actual mobile devices.
 - `[TBD]` **🟢 RUNTIME-005: Enemy spawn positions may be offscreen.** `SpawnSystem` uses hardcoded spawn points and `GameScene.spawnPoints` which are set relative to `groundY` and `worldWidth`. If viewport size is very small or very large, enemies could spawn in invisible areas. Visual confirmation needed.
 - `[TBD]` **🟢 RUNTIME-006: Wave pacing feel is unknown.** `SpawnSystem.buildWaveDefinition()` calculates enemy counts and intervals mathematically, but whether the pacing *feels* right (too fast? too slow? overwhelming?) can only be judged by playing.
@@ -237,10 +313,10 @@ The reference screenshot shows a **split-screen 2-player competitive** layout:
 
 ### Newly Found Issues (2026-02-16 08:35 re-audit)
 
-- `[TBD]` **🟡 AUDIT-001: `preloadAssets()` throws in dev mode, killing the game loop.** `GameScene.preloadAssets()` line 118 throws `new Error("BUG-015 guard")` when sprites fail to load in dev mode. This throw happens inside an `async` function that runs during `onEnter()` — but `Game.switchScene()` wraps `onEnter()` return values with `.catch()` that only emits `scene:error`. The `update()` method at line 175 also re-throws `this.assetsError` in dev mode. If the SVG files 404 during development (e.g., wrong path, missing file), the game loop will crash with an unhandled exception instead of falling back to rectangles. **Should: log the guard error, set fallbackMode, and continue.**
-- `[TBD]` **🟡 AUDIT-002: `recycleBullets()` uses `Array.splice()` + `Array.indexOf()` in a hot loop.** `GameScene.recycleBullets()` (lines 221-224) iterates backwards through `playerBullets` and `enemyBullets`, calling `.splice(i, 1)` and then finding the same bullet in `this.bullets` via `.indexOf()` + `.splice()`. With pools of 80 bullets each and `this.bullets` growing unbounded, this is O(n²) per frame. At scale (many bullets on screen), this causes frame drops on mobile. **Should: use swap-remove or partition-and-truncate instead of splice.**
+- `[DONE]` **~~🟡 AUDIT-001: `preloadAssets()` throws in dev mode, killing the game loop.~~ Fixed.** `GameScene.preloadAssets()` (`GameScene.js:130-159`) now wraps loads in try/catch. On failure: sets `fallbackMode = true`, logs `console.error()` in dev mode, sets `assetsReady = true` via `finally`. No longer throws — game continues with shape rendering.
+- `[DONE]` **~~🟡 AUDIT-002: `recycleBullets()` uses `Array.splice()` + `Array.indexOf()` in a hot loop.~~ Fixed.** `GameScene.recycleBullets()` (`GameScene.js:334-361`) now uses O(n) partition-and-truncate via `compactOwnedBullets()` inner function — single forward pass with write pointer, then `list.length = writeIndex`. No `splice()` or `indexOf()`.
 - `[DONE]` **~~🟡 AUDIT-003: `buildHudState()` key naming inconsistency.~~ Fixed (BUG-025).** `buildHudState()` now computes `wave = Math.max(currentWave, scoreWave)` and includes both `wave` and `currentWave`. `normalizeStats()` now checks `currentWave` and `waveNumber` as fallback keys. `ScoreSystem` tracks `wave_start` events.
-- `[TBD]` **🟢 AUDIT-004: Platforms are recreated on every `onResize()`.** `GameScene.onResize()` line 105 creates new `Platform` objects on every resize event. Resize events fire frequently on mobile (orientation change, keyboard popup, etc.), creating garbage each time. Should reuse existing platform objects and update their positions/dimensions instead.
+- `[DONE]` **~~🟢 AUDIT-004: Platforms are recreated on every `onResize()`.~~ Fixed.** `GameScene.applyPlatformLayout()` (`GameScene.js:207-231`) now reuses existing platform objects — updates `x`, `y`, `width`, `height` in-place. Only creates new `Platform` instances when the array is shorter than the layout. `onResize()` calls `updateStaticLevelGeometry()` which delegates to `applyPlatformLayout()`.
 
 ---
 
@@ -250,9 +326,43 @@ The reference screenshot shows a **split-screen 2-player competitive** layout:
 |---|---|---|---|
 | XPHASE-001 | ~~`Game.js` becoming a god object if simulation logic isn't extracted~~ | ~~🔴 High~~ | `[DONE]` — BUG-006 fixed |
 | XPHASE-002 | ~~Touch input system needs clean handoff to Joystick component~~ | ~~🔴 High~~ | `[DONE]` — `Input.setTouchControlsEnabled()` added. `GameScene` disables raw touch on enter, restores on exit. |
-| XPHASE-003 | No error boundary / crash recovery in game loop | 🟡 Medium | `[TBD]` — If `update()` or `render()` throws, the loop dies silently |
+| XPHASE-003 | ~~No error boundary / crash recovery in game loop~~ | ~~🟡 Medium~~ | `[DONE]` — `Game.handleLoopError()` (`Game.js:212`) catches errors in update/render, emits `game:error`, and gracefully stops the loop. |
 | XPHASE-004 | ~~No asset loading / preloading strategy defined~~ | ~~🟡 Medium~~ | `[DONE]` — `GameScene.preloadAssets()` handles SpriteSheet loading. No generic AssetLoader, but functional for current needs. |
-| XPHASE-005 | Canvas CSS rule dead code in index.html | 🟢 Low | `[TBD]` — Cleanup when convenient |
+| XPHASE-005 | ~~Canvas CSS rule dead code in index.html~~ | ~~🟢 Low~~ | `[DONE]` — Dead `width`/`height` CSS removed. `#game-canvas` now only sets `display: block`. |
 | XPHASE-006 | ~~`bullet_dodged` event still has no emitter~~ | ~~🟡 Medium~~ | `[DONE]` — `CollisionSystem.#emitBulletDodged()` emits when enemy bullet crosses player X within vertical window. `Bullet.js` tracks `previousX`/`previousY` and `dodgeCounted` flag. |
-| XPHASE-007 | Massive helper function duplication across UI scenes | 🟡 Medium | `[TBD]` — ~240 lines of identical code in `MenuScene`, `PauseScene`, `GameOverScene`. Extract to shared module. |
+| XPHASE-007 | ~~Helper function duplication across UI scenes and components~~ | ~~🟢 Low~~ | `[DONE]` — All duplication resolved. Scene helpers → `scenePointerUtils.js`. System helpers → `systemUtils.js`. Entity projection → `Entity.projectToScreen()`. UI component helpers → `ui/uiUtils.js` (imported by `Button.js`, `HUD.js`, `Joystick.js`, `ScoreBoard.js`). Audio helpers → `audioUtils.js`. |
 | XPHASE-008 | ~~`routePointer` + `callAny` pattern breaks scene buttons~~ | ~~🔴 High~~ | `[DONE]` — All 3 scenes (`GameOverScene`, `MenuScene`, `PauseScene`) now check `Boolean(result.value)` (BUG-023 + BUG-027). |
+
+---
+
+## Deep Audit — Round 2 (2026-02-16, full 37-file read-through)
+
+> Full static read of every source file. Verified all 27 bugs still resolved. Found 14 new issues not previously documented.
+
+### Performance
+
+- `[DONE]` **~~🟡 AUDIT-005: `SpawnSystem.#recycleInactiveEnemies()` uses `.splice()` in a hot loop.~~ Fixed.** Replaced with O(n) compact pass (`SpawnSystem.js:250-266`): forward scan with write pointer, `enemies.length = writeIndex`. Same pattern as AUDIT-002 fix.
+- `[DONE]` **~~🟡 AUDIT-006: `CollisionSystem.update()` creates new arrays every frame.~~ Fixed.** Uses reusable scratch arrays (`_activePlayers`, `_activeEnemies`, `_activePlatforms`, `_activeBullets` at `CollisionSystem.js:85-88`). `#collectActiveEntities()` fills the scratch array in-place (`CollisionSystem.js:92-95`). Zero per-frame allocations.
+- `[DONE]` **~~🟢 AUDIT-007: `Bullet.render()` uses `beginPath()/arc()/fill()` per bullet.~~ Fixed.** Default render path now uses `fillRect` (`Bullet.js:143`). Circle rendering only activates when `this.shape === "circle"` is explicitly set (`Bullet.js:133`).
+
+### Logic Bugs
+
+- `[DONE]` **~~🟡 AUDIT-008: `HUD._drawHealthBar()` clips incorrectly at very low HP.~~ Fixed.** Health bar Y position now clamped between `padding` and `view.height - padding - height` (`HUD.js:154-156`). Label placement uses top-label-or-bottom-label fallback (`HUD.js:173-176`). Radius clamped to `height * 0.5` via `clamp()` (`HUD.js:158`).
+- `[DONE]` **~~🟡 AUDIT-009: `ScoreSystem` wave count off-by-one on `wave_cleared`.~~ Fixed.** `wave_cleared` handler now uses `this._resolveWave(payload, this.state.wave)` (`ScoreSystem.js:41`) — fallback is current wave (not `+1`). Same `_resolveWave` used by both `wave_start` and `wave_cleared`.
+- `[DONE]` **~~🟢 AUDIT-010: `Player.update()` `onGround` flicker.~~ Fixed.** `CollisionSystem.#resolveEntitiesAgainstPlatforms()` now uses grounded aggregation (`CollisionSystem.js:109,136,140`). Sets `entity.onGround = grounded` once after all platform checks. `CollisionSystem` is the sole owner of `onGround` state.
+
+### Resource Leaks
+
+- `[DONE]` **🟡 AUDIT-011: `MusicManager.fadeTo()` timer not cleared on `dispose()`.** False alarm — `dispose()` calls `stop()` which calls `#clearFadeTimer()`. Verified safe. _(Retracted.)_
+- `[DONE]` **~~🟡 AUDIT-012: `Background.setLayers()` leaks old Image objects.~~ Fixed.** `Background` now maintains `_imageCache` Map (`Background.js:8`). `#getCachedImage()` (`Background.js:120-130`) deduplicates Image objects by `src`. Repeated `setLayers()` calls reuse cached Images — no orphaned elements.
+- `[DONE]` **~~🟡 AUDIT-013: `GameScene.onResize()` re-creates `Background` layers on every resize.~~ Fixed.** Combined with AUDIT-012: `_imageCache` ensures Images are reused across resize calls. No unbounded allocation.
+
+### Defensive Gaps
+
+- `[DONE]` **~~🟡 AUDIT-014: `EventBus.emit()` does not catch handler errors.~~ Fixed.** `EventBus.emit()` now wraps each handler in try/catch (`EventBus.js:35-38`). Errors routed to `#reportHandlerError()` (`EventBus.js:42-53`) which emits `eventbus:error` event. Recursion guard via `_handlingError` flag prevents infinite error loops (`EventBus.js:43,61,70`). Fallback to `console.error()` when no error handlers are registered.
+- `[DONE]` **~~🟢 AUDIT-015: `SpriteSheet.load()` race condition.~~ Fixed.** Added `_loadToken` counter (`SpriteSheet.js:33`) incremented on each `load()` call. Token checked at `SpriteSheet.js:47,52` — stale callbacks from earlier load cycles are ignored. `_loadingSource` guard (`SpriteSheet.js:43`) prevents duplicate in-flight loads for the same source.
+
+### Tech Debt
+
+- `[DONE]` **~~🟡 AUDIT-016: `AudioManager` and `MusicManager` share ~150 lines of duplicate code.~~ Fixed.** Shared functions extracted to `audio/audioUtils.js:1-98` (`clampVolume`, `canUseHtmlAudio`, `unlockAudioProbe`, `getAudioCandidates`, `resolveAudioSource`, `UNLOCK_AUDIO_DATA_URI`). Both `AudioManager.js:1` and `MusicManager.js:1` now import from it.
+- `[DONE]` **~~🟢 AUDIT-017: `GameScene.update()` line density is very high.~~ Fixed.** Extracted into named sub-methods: `buildSystemContext()` (`GameScene.js:391`), `buildHudState()` (`GameScene.js:408`), `firePlayerBullet()` (`GameScene.js:432`), `fireEnemyBullet()` (`GameScene.js:440`), `recycleBullets()` (`GameScene.js:447`). Context and HUD state objects reused via instance fields to avoid per-frame allocations.

@@ -20,6 +20,17 @@ New instances should read this file first to understand role, constraints, and e
 - `project overview/SAFETY_REVIEW.md` is READ ONLY.
 - Codex may read both files for context but must not modify them.
 
+## Path Scope and Privacy Boundary
+- Default search/edit scope is strictly `C:\BOTS\Andr_gme` and its subfolders.
+- Do not scan `C:\Users\razva`, `C:\Users\razva\OneDrive`, or any other personal/global path unless the user explicitly requests it in that session.
+- If a required file is not found inside `C:\BOTS\Andr_gme`, stop and ask the user for the exact allowed path before running broader search commands.
+
+## OneDrive / `rg.exe` Safety
+- `rg.exe` (ripgrep) can trigger OneDrive Files On-Demand hydration when it scans placeholder files under OneDrive paths.
+- Never run recursive search/index commands outside `C:\BOTS\Andr_gme` by default.
+- Always set command working directory to `C:\BOTS\Andr_gme` when using search commands (`rg`, `Get-ChildItem -Recurse`, etc.).
+- If a task truly requires scanning OneDrive or personal folders, ask the user for explicit approval in that session first.
+
 ## Playtest Evidence (Screenshots)
 - Evidence folder: `project overview/game pictures`
 - Purpose: source of truth for visual/playtest validation before and after fixes.

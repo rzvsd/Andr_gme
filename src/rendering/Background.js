@@ -5,6 +5,7 @@ export class Background {
     this.fallbackColor =
       typeof fallbackColor === "string" ? fallbackColor : DEFAULT_FALLBACK_COLOR;
     this.layers = [];
+    this._imageCache = new Map();
     this.setLayers(layers);
   }
 
@@ -29,7 +30,16 @@ export class Background {
     ctx.restore();
 
     for (const layer of this.layers) {
-      if (!layer || layer.error || !layer.ready || !layer.image) {
+      if (!layer || !layer.image) {
+        continue;
+      }
+
+      if (!layer.ready) {
+        layer.ready = this.#isImageReady(layer.image);
+        layer.error = !layer.ready && this.#isImageFailed(layer.image);
+      }
+
+      if (layer.error || !layer.ready) {
         continue;
       }
 
@@ -86,16 +96,17 @@ export class Background {
     const providedImage = source.image ?? source.imageElement;
     if (this.#isImageLike(providedImage)) {
       state.image = providedImage;
-      this.#attachImageStateHandlers(state, providedImage);
+      state.ready = this.#isImageReady(providedImage);
+      state.error = !state.ready && this.#isImageFailed(providedImage);
       return state;
     }
 
     if (state.imageSrc && typeof Image !== "undefined") {
-      const image = new Image();
+      const image = this.#getCachedImage(state.imageSrc);
       image.decoding = "async";
       state.image = image;
-      this.#attachImageStateHandlers(state, image);
-      image.src = state.imageSrc;
+      state.ready = this.#isImageReady(image);
+      state.error = !state.ready && this.#isImageFailed(image);
       return state;
     }
 
@@ -106,46 +117,16 @@ export class Background {
     return state;
   }
 
-  #attachImageStateHandlers(layer, image) {
-    if (!layer || !image) {
-      return;
+  #getCachedImage(imageSrc) {
+    if (this._imageCache.has(imageSrc)) {
+      return this._imageCache.get(imageSrc);
     }
 
-    if (this.#isImageReady(image)) {
-      layer.ready = true;
-      layer.error = false;
-      return;
-    }
-
-    if (this.#isImageFailed(image)) {
-      layer.ready = false;
-      layer.error = true;
-      return;
-    }
-
-    const onLoad = () => {
-      layer.ready = this.#isImageReady(image);
-      layer.error = !layer.ready;
-      cleanup();
-    };
-
-    const onError = () => {
-      layer.ready = false;
-      layer.error = true;
-      cleanup();
-    };
-
-    const cleanup = () => {
-      if (typeof image.removeEventListener === "function") {
-        image.removeEventListener("load", onLoad);
-        image.removeEventListener("error", onError);
-      }
-    };
-
-    if (typeof image.addEventListener === "function") {
-      image.addEventListener("load", onLoad);
-      image.addEventListener("error", onError);
-    }
+    const image = new Image();
+    image.decoding = "async";
+    image.src = imageSrc;
+    this._imageCache.set(imageSrc, image);
+    return image;
   }
 
   #isImageLike(value) {

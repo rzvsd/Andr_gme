@@ -1,8 +1,5 @@
 import { Physics } from '../core/Physics.js';
-
-const toArray = (value) => (Array.isArray(value) ? value : []);
-
-const isFiniteNumber = (value) => Number.isFinite(Number(value));
+import { emitEvent, isFiniteNumber } from './systemUtils.js';
 
 const hasValidBounds = (entity) => (
   entity &&
@@ -34,14 +31,6 @@ const deactivateEntity = (entity) => {
   if (isFiniteNumber(entity.vy)) {
     entity.vy = 0;
   }
-};
-
-const emitEvent = (eventBus, eventName, payload) => {
-  if (!eventBus || typeof eventBus.emit !== 'function') {
-    return;
-  }
-
-  eventBus.emit(eventName, payload);
 };
 
 const centerOf = (entity) => ({
@@ -92,11 +81,18 @@ const isPlayerOwnedBullet = (bullet, players) => {
 };
 
 export class CollisionSystem {
+  constructor() {
+    this._activePlayers = [];
+    this._activeEnemies = [];
+    this._activePlatforms = [];
+    this._activeBullets = [];
+  }
+
   update(_deltaSeconds, context = {}) {
-    const players = toArray(context?.players);
-    const enemies = toArray(context?.enemies);
-    const bullets = toArray(context?.bullets);
-    const platforms = toArray(context?.platforms);
+    const players = this.#collectActiveEntities(context?.players, this._activePlayers);
+    const enemies = this.#collectActiveEntities(context?.enemies, this._activeEnemies);
+    const bullets = this.#collectActiveEntities(context?.bullets, this._activeBullets);
+    const platforms = this.#collectActiveEntities(context?.platforms, this._activePlatforms);
     const eventBus = context?.eventBus;
 
     this.#resolveEntitiesAgainstPlatforms(players, platforms);
@@ -105,16 +101,14 @@ export class CollisionSystem {
   }
 
   #resolveEntitiesAgainstPlatforms(entities, platforms) {
-    const validPlatforms = platforms.filter(isActiveEntity);
-
     for (const entity of entities) {
       if (!isActiveEntity(entity)) {
         continue;
       }
 
-      entity.onGround = false;
+      let grounded = false;
 
-      for (const platform of validPlatforms) {
+      for (const platform of platforms) {
         if (!Physics.aabbOverlap(entity, platform)) {
           continue;
         }
@@ -139,23 +133,22 @@ export class CollisionSystem {
         }
 
         if (deltaY < 0) {
-          entity.onGround = true;
+          grounded = true;
         }
       }
+
+      entity.onGround = grounded;
     }
   }
 
   #handleBulletCollisions(bullets, players, enemies, eventBus) {
-    const validPlayers = players.filter(isActiveEntity);
-    const validEnemies = enemies.filter(isActiveEntity);
-
     for (const bullet of bullets) {
       if (!isActiveEntity(bullet)) {
         continue;
       }
 
       const playerOwned = isPlayerOwnedBullet(bullet, players);
-      const targets = playerOwned ? validEnemies : validPlayers;
+      const targets = playerOwned ? enemies : players;
       let didHitTarget = false;
 
       for (const target of targets) {
@@ -218,9 +211,23 @@ export class CollisionSystem {
       }
 
       if (!playerOwned && !didHitTarget) {
-        this.#emitBulletDodged(bullet, validPlayers, eventBus);
+        this.#emitBulletDodged(bullet, players, eventBus);
       }
     }
+  }
+
+  #collectActiveEntities(source, out) {
+    out.length = 0;
+    if (!Array.isArray(source)) {
+      return out;
+    }
+
+    for (const entity of source) {
+      if (isActiveEntity(entity)) {
+        out.push(entity);
+      }
+    }
+    return out;
   }
 
   #emitBulletDodged(bullet, players, eventBus) {

@@ -1,4 +1,11 @@
 import { ENEMY_TYPES } from '../entities/Enemy.js';
+import {
+  asArray,
+  toNumber,
+  isActiveEntity,
+  emitEvent,
+  resolveNowMs,
+} from './systemUtils.js';
 
 const DEFAULT_SHOOT_RANGE_X = 260;
 const SHOOT_RANGE_X_BY_TYPE = Object.freeze({
@@ -11,47 +18,11 @@ const SHOOT_RANGE_X_BY_TYPE = Object.freeze({
 
 const EPSILON = 0.001;
 
-const asArray = (value) => {
-  if (Array.isArray(value)) {
-    return value;
-  }
-
-  return value ? [value] : [];
-};
-
-const toNumber = (value, fallback = 0) => {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : fallback;
-};
-
-const isActiveEntity = (entity) => Boolean(entity) && entity.active !== false;
-
 const centerX = (entity) => toNumber(entity?.x, 0) + toNumber(entity?.width, 0) * 0.5;
-
-const resolveNowMs = (nowMs) => {
-  const numericNowMs = Number(nowMs);
-  if (Number.isFinite(numericNowMs)) {
-    return numericNowMs;
-  }
-
-  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
-    return performance.now();
-  }
-
-  return Date.now();
-};
 
 const resolveShootRangeX = (enemy) => {
   const range = SHOOT_RANGE_X_BY_TYPE[enemy?.type];
   return Number.isFinite(range) ? range : DEFAULT_SHOOT_RANGE_X;
-};
-
-const emitEvent = (eventBus, eventName, payload) => {
-  if (!eventBus || typeof eventBus.emit !== 'function') {
-    return;
-  }
-
-  eventBus.emit(eventName, payload);
 };
 
 const findNearestActivePlayerOnX = (enemy, players) => {

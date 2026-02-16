@@ -1,4 +1,6 @@
-const STORAGE_KEY = 'bullet-dodge-arena:settings';
+import { load as loadStorage, save as saveStorage } from '../utils/storage.js';
+
+const STORAGE_KEY = 'settings';
 
 export const DEFAULT_SETTINGS = Object.freeze({
   soundEnabled: true,
@@ -10,10 +12,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
 let currentSettings = { ...DEFAULT_SETTINGS };
 
-function hasLocalStorage() {
-  return typeof localStorage !== 'undefined' && localStorage !== null;
-}
-
 function asSettingsObject(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return value;
@@ -23,28 +21,11 @@ function asSettingsObject(value) {
 }
 
 function persistSettings(settings) {
-  if (!hasLocalStorage()) {
-    return;
-  }
-
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // Ignore storage write failures (quota, privacy mode, etc).
-  }
+  saveStorage(STORAGE_KEY, settings);
 }
 
 export function loadSettings() {
-  let loaded = {};
-
-  if (hasLocalStorage()) {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      loaded = raw ? asSettingsObject(JSON.parse(raw)) : {};
-    } catch {
-      loaded = {};
-    }
-  }
+  const loaded = asSettingsObject(loadStorage(STORAGE_KEY, {}));
 
   currentSettings = { ...DEFAULT_SETTINGS, ...loaded };
   return { ...currentSettings };

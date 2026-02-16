@@ -1,5 +1,9 @@
-const UNLOCK_AUDIO_DATA_URI =
-  "data:audio/wav;base64,UklGRhQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
+import {
+  canUseHtmlAudio,
+  clampVolume,
+  resolveAudioSource,
+  unlockAudioProbe,
+} from "./audioUtils.js";
 
 const DEFAULT_EVENT_SOUND_MAP = Object.freeze({
   bullet_fired: "pew",
@@ -9,20 +13,6 @@ const DEFAULT_EVENT_SOUND_MAP = Object.freeze({
   wave_cleared: "fanfare",
   ui_click: "ui_click",
 });
-
-function clampVolume(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return 1;
-  }
-  if (numeric < 0) return 0;
-  if (numeric > 1) return 1;
-  return numeric;
-}
-
-function canUseHtmlAudio() {
-  return typeof Audio !== "undefined";
-}
 
 export class AudioManager {
   constructor(eventBus, options = {}) {
@@ -41,6 +31,7 @@ export class AudioManager {
     this.audioPools = new Map();
     this.failedSounds = new Set();
     this.failedSourceIndexes = new Map();
+    this.missingAssetWarnings = new Set();
     this.pendingPlays = [];
     this.unlocked = options.unlocked === true;
     this.disposed = false;
@@ -100,30 +91,10 @@ export class AudioManager {
       return;
     }
 
-    const probe = new Audio(UNLOCK_AUDIO_DATA_URI);
-    probe.muted = true;
-    probe.volume = 0;
-
-    const finish = () => {
+    unlockAudioProbe(() => {
       this.unlocked = true;
-      try {
-        probe.pause();
-      } catch {
-        // Ignore.
-      }
       this.#flushPendingPlays();
-    };
-
-    try {
-      const promise = probe.play();
-      if (promise && typeof promise.then === "function") {
-        promise.then(finish).catch(finish);
-      } else {
-        finish();
-      }
-    } catch {
-      finish();
-    }
+    });
   }
 
   play(name) {
@@ -250,55 +221,8 @@ export class AudioManager {
   }
 
   #resolveSource(name) {
-    const candidates = this.#getCandidates(name);
-    if (candidates.length === 0) {
-      return null;
-    }
-
     const failed = this.failedSourceIndexes.get(name);
-    for (let i = 0; i < candidates.length; i += 1) {
-      if (!failed || !failed.has(i)) {
-        return { index: i, src: candidates[i] };
-      }
-    }
-
-    return null;
-  }
-
-  #getCandidates(name) {
-    const definition = this.sounds[name];
-    const candidates = [];
-
-    if (typeof definition === "string") {
-      candidates.push(definition);
-    } else if (definition && typeof definition === "object") {
-      if (typeof definition.src === "string") candidates.push(definition.src);
-      if (typeof definition.webm === "string") candidates.push(definition.webm);
-      if (typeof definition.mp3 === "string") candidates.push(definition.mp3);
-      if (Array.isArray(definition.sources)) {
-        for (const source of definition.sources) {
-          if (typeof source === "string") {
-            candidates.push(source);
-          }
-        }
-      }
-    }
-
-    if (candidates.length === 0) {
-      candidates.push(`${this.basePath}/${name}.webm`);
-      candidates.push(`${this.basePath}/${name}.mp3`);
-    }
-
-    const unique = [];
-    const seen = new Set();
-    for (const candidate of candidates) {
-      if (typeof candidate !== "string") continue;
-      const trimmed = candidate.trim();
-      if (!trimmed || seen.has(trimmed)) continue;
-      seen.add(trimmed);
-      unique.push(trimmed);
-    }
-    return unique;
+    return resolveAudioSource(name, this.sounds[name], this.basePath, failed);
   }
 
   #markSourceFailed(name, sourceIndex) {
@@ -313,6 +237,10 @@ export class AudioManager {
     const next = this.#resolveSource(name);
     if (!next) {
       this.failedSounds.add(name);
+      if (!this.missingAssetWarnings.has(name)) {
+        this.missingAssetWarnings.add(name);
+        console.warn(`[AudioManager] No playable sources resolved for sound "${name}".`);
+      }
       this.#clearPool(name);
       return;
     }

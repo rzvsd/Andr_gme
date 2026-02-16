@@ -59,6 +59,7 @@ export class GameScene {
     this.spawnPoints = [];
     this.assetsReady = false;
     this.assetsError = null;
+    this.assetsErrorLogged = false;
     this.fallbackMode = false;
     this.preloadPromise = null;
     this.enemyPool = new ObjectPool(() => new Enemy(), (e) => e?.configure?.("GRUNT", { x: -9999, y: -9999 }));
@@ -71,7 +72,20 @@ export class GameScene {
     this.physicsSystem = new PhysicsSystem();
     this.collisionSystem = new CollisionSystem();
     this.spawnSystem = new SpawnSystem({ enemyPool: this.enemyPool });
+    this.systemPipeline = [this.aiSystem, this.physicsSystem, this.collisionSystem, this.spawnSystem];
+    this.systemContext = {
+      players: [],
+      enemies: this.enemies,
+      bullets: this.bullets,
+      platforms: this.platforms,
+      eventBus: null,
+      nowMs: 0,
+      enemyPool: this.enemyPool,
+      spawnPoints: this.spawnPoints,
+      autoStart: false,
+    };
     this.scoreSystem = null;
+    this.hudState = {};
     this.hud = new HUD({ style: { rightInset: HUD_RIGHT_INSET } });
     this.joystick = new Joystick();
     this.jumpButton = new Button({ label: "JMP" });
@@ -121,20 +135,40 @@ export class GameScene {
     this.layout(width, height);
     if (this.player) this.player.y = Math.min(this.player.y, this.groundY - this.player.height);
     if (this.player) {
-      this.platforms = [new Platform(0, this.groundY, this.worldWidth, GROUND_H), new Platform(this.worldWidth * 0.28, this.groundY - 170, 280, 28), new Platform(this.worldWidth * 0.62, this.groundY - 220, 300, 28)];
-      this.spawnPoints = [{ x: -40, y: this.groundY - 80 }, { x: this.worldWidth * 0.35, y: this.groundY - 260 }, { x: this.worldWidth + 40, y: this.groundY - 80 }];
-      this.background?.setLayers?.([{ imageSrc: "/sprites/background_layer_1.svg", y: 0, height, parallaxX: 0.2, parallaxY: 0 }, { imageSrc: "/sprites/background_layer_2.svg", y: 40, height, parallaxX: 0.45, parallaxY: 0 }]);
+      this.updateStaticLevelGeometry(height);
     }
   }
 
   async preloadAssets() {
+    this.assetsReady = false;
+    this.assetsError = null;
+    this.assetsErrorLogged = false;
+
     this.playerSheet = new SpriteSheet("/sprites/player_sheet.svg", { frameWidth: 64, frameHeight: 64, columns: 4, rows: 1 });
     this.enemySheet = new SpriteSheet("/sprites/enemy_sheet.svg", { frameWidth: 64, frameHeight: 64, columns: 4, rows: 1 });
     this.bulletSheet = new SpriteSheet("/sprites/bullets.svg", { frameWidth: 24, frameHeight: 32, columns: 5, rows: 1 });
-    const loaded = [await this.playerSheet.load(), await this.enemySheet.load(), await this.bulletSheet.load()];
-    this.assetsReady = true;
-    this.fallbackMode = !loaded.every(Boolean);
-    if (this.fallbackMode && isDev()) throw new Error("BUG-015 guard: required sprites failed preload in GameScene.");
+
+    try {
+      const loaded = await Promise.all([
+        this.playerSheet.load(),
+        this.enemySheet.load(),
+        this.bulletSheet.load(),
+      ]);
+
+      this.fallbackMode = !loaded.every(Boolean);
+      if (this.fallbackMode && isDev()) {
+        console.warn("[GameScene] Sprite preload incomplete. Falling back to shape rendering.");
+      }
+    } catch (error) {
+      this.assetsError = error;
+      this.fallbackMode = true;
+      if (isDev()) {
+        console.error("[GameScene] Sprite preload failed. Falling back to shape rendering.", error);
+        this.assetsErrorLogged = true;
+      }
+    } finally {
+      this.assetsReady = true;
+    }
   }
 
   resetRun(game) {
@@ -142,12 +176,19 @@ export class GameScene {
     this.groundY = (game.viewHeight || 1) - GROUND_H;
     this.releaseRunObjects();
     this.player = new Player({ x: 220, y: this.groundY - 40, width: 28, height: 40 }); this.player.isPlayer = true;
-    this.platforms = [new Platform(0, this.groundY, this.worldWidth, GROUND_H), new Platform(this.worldWidth * 0.28, this.groundY - 170, 280, 28), new Platform(this.worldWidth * 0.62, this.groundY - 220, 300, 28)];
-    this.spawnPoints = [{ x: -40, y: this.groundY - 80 }, { x: this.worldWidth * 0.35, y: this.groundY - 260 }, { x: this.worldWidth + 40, y: this.groundY - 80 }];
+    this.updateStaticLevelGeometry(game.viewHeight || 1, false);
     this.enemies = []; this.bullets = []; this.playerBullets = []; this.enemyBullets = [];
-    this.background = new Background([{ imageSrc: "/sprites/background_layer_1.svg", y: 0, height: game.viewHeight, parallaxX: 0.2, parallaxY: 0 }, { imageSrc: "/sprites/background_layer_2.svg", y: 40, height: game.viewHeight, parallaxX: 0.45, parallaxY: 0 }], "#9ab0d4");
+    this.background = new Background(this.buildBackgroundLayers(game.viewHeight || 1), "#9ab0d4");
     this.spawnSystem = new SpawnSystem({ enemyPool: this.enemyPool });
-    this.scoreSystem?.dispose?.(); this.scoreSystem = new ScoreSystem(game.eventBus);
+    this.systemPipeline = [this.aiSystem, this.physicsSystem, this.collisionSystem, this.spawnSystem];
+    this.scoreSystem?.dispose?.();
+    this.scoreSystem = new ScoreSystem(game.eventBus);
+    this.systemContext.players = this.player ? [this.player] : [];
+    this.systemContext.enemies = this.enemies;
+    this.systemContext.bullets = this.bullets;
+    this.systemContext.platforms = this.platforms;
+    this.systemContext.spawnPoints = this.spawnPoints;
+    this.systemContext.enemyPool = this.enemyPool;
     this.runStartedAtMs = nowMs();
     this.elapsedMs = 0;
     this.pauseRequested = false;
@@ -182,6 +223,52 @@ export class GameScene {
 
   unbindEvents() { for (const off of this.eventOff) off?.(); this.eventOff = []; }
 
+  getLevelPlatforms() {
+    return [
+      { x: 0, y: this.groundY, width: this.worldWidth, height: GROUND_H },
+      { x: this.worldWidth * 0.28, y: this.groundY - 170, width: 280, height: 28 },
+      { x: this.worldWidth * 0.62, y: this.groundY - 220, width: 300, height: 28 },
+    ];
+  }
+
+  applyPlatformLayout(layout) {
+    for (let i = 0; i < layout.length; i += 1) {
+      const next = layout[i];
+      let platform = this.platforms[i];
+      if (!(platform instanceof Platform)) {
+        platform = new Platform(next.x, next.y, next.width, next.height);
+        this.platforms[i] = platform;
+      } else {
+        platform.x = next.x;
+        platform.y = next.y;
+        platform.width = next.width;
+        platform.height = next.height;
+        platform.active = true;
+      }
+    }
+    this.platforms.length = layout.length;
+  }
+
+  updateStaticLevelGeometry(viewHeight, syncBackground = true) {
+    this.applyPlatformLayout(this.getLevelPlatforms());
+    this.spawnPoints = [
+      { x: -40, y: this.groundY - 80 },
+      { x: this.worldWidth * 0.35, y: this.groundY - 260 },
+      { x: this.worldWidth + 40, y: this.groundY - 80 },
+    ];
+
+    if (syncBackground && this.background) {
+      this.background.setLayers(this.buildBackgroundLayers(viewHeight));
+    }
+  }
+
+  buildBackgroundLayers(viewHeight) {
+    return [
+      { imageSrc: "/sprites/background_layer_1.svg", y: 0, height: viewHeight, parallaxX: 0.2, parallaxY: 0 },
+      { imageSrc: "/sprites/background_layer_2.svg", y: 40, height: viewHeight, parallaxX: 0.45, parallaxY: 0 },
+    ];
+  }
+
   layout(width, height) {
     const w = Math.max(1, Number(width) || 1), h = Math.max(1, Number(height) || 1);
     this.worldWidth = Math.max(this.worldWidth, w * WORLD_MULT, WORLD_MIN_WIDTH); this.groundY = h - GROUND_H;
@@ -193,24 +280,89 @@ export class GameScene {
   }
 
   update(dt, game) {
-    if (this.assetsError && isDev()) throw this.assetsError;
+    if (this.assetsError && isDev() && !this.assetsErrorLogged) {
+      console.error("[GameScene] Continuing in fallback mode after asset preload error.", this.assetsError);
+      this.assetsErrorLogged = true;
+    }
     if (!this.assetsReady || !this.player) return;
-    if (this.runStartedAtMs > 0) this.elapsedMs = Math.max(0, nowMs() - this.runStartedAtMs);
-    if (this.pauseRequested) { this.pauseRequested = false; emit(game.eventBus, "ui_click", { source: "pause" }); game.switchScene("pause", { resume: true }); return; }
+
+    const frameNowMs = nowMs();
+    if (this.runStartedAtMs > 0) {
+      this.elapsedMs = Math.max(0, frameNowMs - this.runStartedAtMs);
+    }
+
+    if (this.pauseRequested) {
+      this.pauseRequested = false;
+      emit(game.eventBus, "ui_click", { source: "pause" });
+      game.switchScene("pause", { resume: true });
+      return;
+    }
+
     const move = (game.input.isPressed("right") ? 1 : 0) - (game.input.isPressed("left") ? 1 : 0);
-    const joyX = this.joystick.getValue().x; this.player.moveIntent = Math.abs(joyX) > 0.08 ? joyX : move;
-    const jumpHeld = this.jumpButton.isPressed(); if (jumpHeld && !this.jumpWasHeld) this.jumpQueued = true; this.jumpWasHeld = jumpHeld;
-    if (game.input.consumePressed("jump") || this.jumpQueued) { this.player.jumpRequested = true; this.jumpQueued = false; }
-    if (game.input.consumePressed("shoot")) this.shootQueued = true; this.shootHeld = game.input.isPressed("shoot") || this.shootButton.isPressed();
+    const joyX = this.joystick.getValue().x;
+    this.player.moveIntent = Math.abs(joyX) > 0.08 ? joyX : move;
+
+    const jumpHeld = this.jumpButton.isPressed();
+    if (jumpHeld && !this.jumpWasHeld) {
+      this.jumpQueued = true;
+    }
+    this.jumpWasHeld = jumpHeld;
+
+    if (game.input.consumePressed("jump") || this.jumpQueued) {
+      this.player.jumpRequested = true;
+      this.jumpQueued = false;
+    }
+
+    if (game.input.consumePressed("shoot")) {
+      this.shootQueued = true;
+    }
+    this.shootHeld = game.input.isPressed("shoot") || this.shootButton.isPressed();
     this.firePlayerBullet(game);
-    if (!this.spawnSystem.waveActive && this.enemies.length === 0) this.spawnSystem.startWave(this.spawnSystem.currentWave + 1);
-    const context = { players: [this.player], enemies: this.enemies, bullets: this.bullets, platforms: this.platforms, eventBus: game.eventBus, nowMs: nowMs(), enemyPool: this.enemyPool, spawnPoints: this.spawnPoints, autoStart: false };
-    this.aiSystem.update(dt, context); this.physicsSystem.update(dt, context); this.collisionSystem.update(dt, context); this.spawnSystem.update(dt, context);
-    this.player.update(dt, context); this.playerAnimator.play(this.player.animationState || "idle"); this.playerAnimator.update(dt);
-    for (const e of this.enemies) if (e?.active !== false) e.update(dt, context);
-    for (const b of this.bullets) { if (b?.active !== false) b.update(dt, context); if (b && (b.x < -OFFSCREEN || b.x > this.worldWidth + OFFSCREEN || b.y < -OFFSCREEN * 2 || b.y > this.groundY + OFFSCREEN * 2)) b.deactivate(); }
-    this.recycleBullets(); this.particles.update(dt);
-    if (this.player.x < 0) this.player.x = 0; if (this.player.x > this.worldWidth - this.player.width) this.player.x = this.worldWidth - this.player.width;
+
+    if (!this.spawnSystem.waveActive && this.enemies.length === 0) {
+      this.spawnSystem.startWave(this.spawnSystem.currentWave + 1);
+    }
+
+    const context = this.buildSystemContext(game.eventBus, frameNowMs);
+    for (const system of this.systemPipeline) {
+      if (system && typeof system.update === "function") {
+        system.update(dt, context);
+      }
+    }
+
+    this.player.update(dt, context);
+    this.playerAnimator.play(this.player.animationState || "idle");
+    this.playerAnimator.update(dt);
+
+    for (const enemy of this.enemies) {
+      if (enemy?.active !== false) {
+        enemy.update(dt, context);
+      }
+    }
+
+    for (const bullet of this.bullets) {
+      if (bullet?.active !== false) {
+        bullet.update(dt, context);
+      }
+      if (
+        bullet &&
+        (bullet.x < -OFFSCREEN ||
+          bullet.x > this.worldWidth + OFFSCREEN ||
+          bullet.y < -OFFSCREEN * 2 ||
+          bullet.y > this.groundY + OFFSCREEN * 2)
+      ) {
+        bullet.deactivate();
+      }
+    }
+
+    this.recycleBullets();
+    this.particles.update(dt);
+
+    if (this.player.x < 0) this.player.x = 0;
+    if (this.player.x > this.worldWidth - this.player.width) {
+      this.player.x = this.worldWidth - this.player.width;
+    }
+
     if (this.player.y > this.groundY + 320 && this.player.active !== false) {
       const before = Number(this.player.health) || 0;
       const damage = this.player.maxHealth;
@@ -219,26 +371,62 @@ export class GameScene {
       const isFatal = this.player.active === false || (before > 0 && after <= 0);
       emit(game.eventBus, "player_hit", { player: this.player, damage, source: "fall", isFatal, death: isFatal, dead: isFatal });
     }
-    if (this.player.active === false) { const stats = this.buildHudState(); const best = Math.max(Number(game.sceneData?.highScore || 0), stats.score); game.sceneData = { ...game.sceneData, highScore: best, stats: { ...stats, highScore: best } }; game.switchScene("game_over", { stats: game.sceneData.stats }); return; }
-    this.hud.setState(this.buildHudState()); game.camera.follow(this.player, CAMERA_LERP);
+
+    const hudState = this.buildHudState(frameNowMs);
+    if (this.player.active === false) {
+      const best = Math.max(Number(game.sceneData?.highScore || 0), hudState.score);
+      game.sceneData = {
+        ...game.sceneData,
+        highScore: best,
+        stats: { ...hudState, highScore: best },
+      };
+      game.switchScene("game_over", { stats: game.sceneData.stats });
+      return;
+    }
+
+    this.hud.setState(hudState);
+    game.camera.follow(this.player, CAMERA_LERP);
   }
 
-  buildHudState() {
+  buildSystemContext(eventBus, currentNowMs) {
+    const context = this.systemContext;
+    context.players.length = 0;
+    if (this.player) {
+      context.players.push(this.player);
+    }
+    context.enemies = this.enemies;
+    context.bullets = this.bullets;
+    context.platforms = this.platforms;
+    context.eventBus = eventBus;
+    context.nowMs = currentNowMs;
+    context.enemyPool = this.enemyPool;
+    context.spawnPoints = this.spawnPoints;
+    context.autoStart = false;
+    return context;
+  }
+
+  buildHudState(currentNowMs = nowMs()) {
     const s = this.scoreSystem?.getState?.() || {};
     const currentWave = Math.max(0, Math.round(Number(this.spawnSystem?.currentWave ?? 0) || 0));
     const scoreWave = Math.max(0, Math.round(Number(s.wave) || 0));
     const wave = Math.max(currentWave, scoreWave);
-    const elapsedMs = this.runStartedAtMs > 0 ? Math.max(0, nowMs() - this.runStartedAtMs) : Math.max(0, this.elapsedMs);
+    const elapsedMs = this.runStartedAtMs > 0
+      ? Math.max(0, currentNowMs - this.runStartedAtMs)
+      : Math.max(0, this.elapsedMs);
     const timeSeconds = Math.floor(elapsedMs / 1000);
-    return {
-      ...s,
-      wave,
-      currentWave,
-      timeSeconds,
-      health: this.player?.health || 0,
-      maxHealth: this.player?.maxHealth || 1,
-      fallbackMode: this.fallbackMode,
-    };
+    const state = this.hudState;
+    state.score = Number(s.score) || 0;
+    state.kills = Number(s.kills) || 0;
+    state.dodges = Number(s.dodges) || 0;
+    state.deaths = Number(s.deaths) || 0;
+    state.hits = Number(s.hits) || 0;
+    state.wave = wave;
+    state.currentWave = currentWave;
+    state.timeSeconds = timeSeconds;
+    state.health = this.player?.health || 0;
+    state.maxHealth = this.player?.maxHealth || 1;
+    state.fallbackMode = this.fallbackMode;
+    return state;
   }
 
   firePlayerBullet(game) {
@@ -257,8 +445,33 @@ export class GameScene {
   }
 
   recycleBullets() {
-    for (let i = this.playerBullets.length - 1; i >= 0; i -= 1) { const b = this.playerBullets[i]; if (b?.active !== false) continue; this.playerBullets.splice(i, 1); const allIndex = this.bullets.indexOf(b); if (allIndex >= 0) this.bullets.splice(allIndex, 1); this.playerBulletPool.release(b); }
-    for (let i = this.enemyBullets.length - 1; i >= 0; i -= 1) { const b = this.enemyBullets[i]; if (b?.active !== false) continue; this.enemyBullets.splice(i, 1); const allIndex = this.bullets.indexOf(b); if (allIndex >= 0) this.bullets.splice(allIndex, 1); this.enemyBulletPool.release(b); }
+    const compactOwnedBullets = (list, pool) => {
+      let writeIndex = 0;
+      for (let readIndex = 0; readIndex < list.length; readIndex += 1) {
+        const bullet = list[readIndex];
+        if (bullet?.active !== false) {
+          list[writeIndex] = bullet;
+          writeIndex += 1;
+          continue;
+        }
+
+        pool.release(bullet);
+      }
+      list.length = writeIndex;
+    };
+
+    compactOwnedBullets(this.playerBullets, this.playerBulletPool);
+    compactOwnedBullets(this.enemyBullets, this.enemyBulletPool);
+
+    let writeIndex = 0;
+    for (let readIndex = 0; readIndex < this.bullets.length; readIndex += 1) {
+      const bullet = this.bullets[readIndex];
+      if (bullet?.active !== false) {
+        this.bullets[writeIndex] = bullet;
+        writeIndex += 1;
+      }
+    }
+    this.bullets.length = writeIndex;
   }
 
   getEnemySpriteFrame(enemy) {
@@ -300,7 +513,7 @@ export class GameScene {
       for (const b of this.bullets) if (b?.active !== false) { const p = game.camera.worldToScreen(b.x, b.y); this.bulletSheet?.drawFrame(ctx, p.x, p.y, typeof b.owner === "string" ? 0 : 2, b.width, b.height); }
     }
     this.particles.render(ctx, game.camera);
-    this.hud.render(ctx, this.buildHudState());
+    this.hud.render(ctx, this.hudState);
     this.joystick.render(ctx); this.jumpButton.render(ctx); this.shootButton.render(ctx); this.pauseButton.render(ctx);
   }
 

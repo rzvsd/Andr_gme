@@ -38,7 +38,7 @@ export class ScoreSystem {
 
     this._unsubscribeFns.push(
       this.eventBus.on("wave_cleared", (payload) => {
-        this.state.wave = this._resolveWave(payload, this.state.wave + 1);
+        this.state.wave = this._resolveWave(payload, this.state.wave);
 
         this.state.score += this._resolvePoints(500, payload);
       })

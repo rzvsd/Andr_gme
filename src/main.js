@@ -2,6 +2,7 @@ import { Game } from "./core/Game.js";
 import { loadSettings } from "./config/settings.js";
 import { MenuScene } from "./scenes/MenuScene.js";
 import { GameScene } from "./scenes/GameScene.js";
+import { VersusGameScene } from "./scenes/VersusGameScene.js";
 import { PauseScene } from "./scenes/PauseScene.js";
 import { GameOverScene } from "./scenes/GameOverScene.js";
 import { AudioManager } from "./audio/AudioManager.js";
@@ -34,6 +35,7 @@ function boot() {
 
   game.registerScene("menu", new MenuScene());
   game.registerScene("game", new GameScene());
+  game.registerScene("versus", new VersusGameScene());
   game.registerScene("pause", new PauseScene());
   game.registerScene("game_over", new GameOverScene());
   game.switchScene("menu", { restart: true });

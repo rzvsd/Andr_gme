@@ -1,3 +1,5 @@
+import { clamp } from "../utils/math.js";
+
 export class Physics {
   static applyGravity(vy, gravity, dt) {
     return vy + gravity * dt;
@@ -22,6 +24,6 @@ export class Physics {
   }
 
   static clamp(value, min, max) {
-    return Math.min(Math.max(value, min), max);
+    return clamp(value, min, max);
   }
 }

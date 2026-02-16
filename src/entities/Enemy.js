@@ -1,4 +1,5 @@
 import { Entity } from './Entity.js';
+import { ENEMY_COLOR_BY_TYPE } from '../config/constants.js';
 
 export const ENEMY_TYPES = Object.freeze({
   GRUNT: 'GRUNT',
@@ -14,7 +15,7 @@ const ENEMY_DEFAULTS = Object.freeze({
     speed: 120,
     damage: 8,
     fireCooldownMs: 900,
-    color: '#cf5f5f',
+    color: ENEMY_COLOR_BY_TYPE.GRUNT,
     width: 24,
     height: 24,
   },
@@ -23,7 +24,7 @@ const ENEMY_DEFAULTS = Object.freeze({
     speed: 80,
     damage: 14,
     fireCooldownMs: 1500,
-    color: '#7b9bcf',
+    color: ENEMY_COLOR_BY_TYPE.SNIPER,
     width: 24,
     height: 24,
   },
@@ -32,7 +33,7 @@ const ENEMY_DEFAULTS = Object.freeze({
     speed: 180,
     damage: 6,
     fireCooldownMs: 700,
-    color: '#d18f4f',
+    color: ENEMY_COLOR_BY_TYPE.RUSHER,
     width: 22,
     height: 22,
   },
@@ -41,7 +42,7 @@ const ENEMY_DEFAULTS = Object.freeze({
     speed: 60,
     damage: 16,
     fireCooldownMs: 1400,
-    color: '#6d8a5d',
+    color: ENEMY_COLOR_BY_TYPE.TANK,
     width: 30,
     height: 30,
   },
@@ -50,7 +51,7 @@ const ENEMY_DEFAULTS = Object.freeze({
     speed: 75,
     damage: 24,
     fireCooldownMs: 1000,
-    color: '#8f58b5',
+    color: ENEMY_COLOR_BY_TYPE.BOSS,
     width: 44,
     height: 44,
   },
@@ -191,23 +192,12 @@ export class Enemy extends Entity {
       return;
     }
 
-    let renderX = this.x;
-    let renderY = this.y;
-
-    if (camera && typeof camera.worldToScreen === 'function') {
-      const screenPosition = camera.worldToScreen(this.x, this.y);
-      renderX = Number(screenPosition?.x);
-      renderY = Number(screenPosition?.y);
-    } else if (camera) {
-      const cameraX = Number(camera.x);
-      const cameraY = Number(camera.y);
-      renderX = this.x - (Number.isFinite(cameraX) ? cameraX : 0);
-      renderY = this.y - (Number.isFinite(cameraY) ? cameraY : 0);
-    }
-
-    if (!Number.isFinite(renderX) || !Number.isFinite(renderY)) {
+    const projected = this.projectToScreen(camera);
+    if (!projected) {
       return;
     }
+    const renderX = projected.x;
+    const renderY = projected.y;
 
     ctx.fillStyle = this.color;
     ctx.fillRect(renderX, renderY, this.width, this.height);

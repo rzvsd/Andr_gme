@@ -6,21 +6,10 @@ import {
   PLAYER_MAX_SPEED,
 } from '../config/constants.js';
 import { Physics } from '../core/Physics.js';
+import { clamp } from '../utils/math.js';
+import { asArray, toNumber } from './systemUtils.js';
 
-const toNumber = (value, fallback = 0) => {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : fallback;
-};
-
-const clampIntent = (value) => Physics.clamp(toNumber(value, 0), -1, 1);
-
-const asArray = (value) => {
-  if (Array.isArray(value)) {
-    return value;
-  }
-
-  return value ? [value] : [];
-};
+const clampIntent = (value) => clamp(toNumber(value, 0), -1, 1);
 
 export class PhysicsSystem {
   update(deltaSeconds, context = {}) {
@@ -41,10 +30,10 @@ export class PhysicsSystem {
         continue;
       }
 
-      const moveIntent = clampIntent(player.moveIntent);
+        const moveIntent = clampIntent(player.moveIntent);
       if (Math.abs(moveIntent) > 0) {
         const acceleratedVx = toNumber(player.vx, 0) + moveIntent * PLAYER_ACCELERATION * dt;
-        player.vx = Physics.clamp(acceleratedVx, -PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
+        player.vx = clamp(acceleratedVx, -PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
       } else {
         player.vx = Physics.applyFriction(toNumber(player.vx, 0), PLAYER_FRICTION, dt);
       }

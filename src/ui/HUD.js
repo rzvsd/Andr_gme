@@ -1,69 +1,11 @@
-function toNumber(value, fallback) {
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function roundedRectPath(ctx, x, y, width, height, radius) {
-  const safeRadius = clamp(radius, 0, Math.min(width, height) / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + safeRadius, y);
-  ctx.lineTo(x + width - safeRadius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
-  ctx.lineTo(x + width, y + height - safeRadius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
-  ctx.lineTo(x + safeRadius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
-  ctx.lineTo(x, y + safeRadius);
-  ctx.quadraticCurveTo(x, y, x + safeRadius, y);
-  ctx.closePath();
-}
-
-function resolveViewportSize(ctx) {
-  const canvas = ctx && ctx.canvas ? ctx.canvas : null;
-  if (!canvas) {
-    return { width: 0, height: 0 };
-  }
-
-  const directWidth = toNumber(canvas.clientWidth, 0);
-  const directHeight = toNumber(canvas.clientHeight, 0);
-  if (directWidth > 0 && directHeight > 0) {
-    return { width: directWidth, height: directHeight };
-  }
-
-  const transform = typeof ctx.getTransform === "function" ? ctx.getTransform() : null;
-  const scaleX = transform && Number.isFinite(transform.a) && Math.abs(transform.a) > 0 ? Math.abs(transform.a) : 1;
-  const scaleY = transform && Number.isFinite(transform.d) && Math.abs(transform.d) > 0 ? Math.abs(transform.d) : 1;
-  return {
-    width: toNumber(canvas.width, 0) / scaleX,
-    height: toNumber(canvas.height, 0) / scaleY
-  };
-}
-
-function pickNumber(source, keys, fallback = 0) {
-  if (!source || typeof source !== "object") {
-    return fallback;
-  }
-
-  for (const key of keys) {
-    const numericValue = Number(source[key]);
-    if (Number.isFinite(numericValue)) {
-      return numericValue;
-    }
-  }
-
-  return fallback;
-}
-
-function formatValue(value) {
-  const safeValue = Number.isFinite(value) ? value : 0;
-  if (typeof safeValue.toLocaleString === "function") {
-    return safeValue.toLocaleString("en-US");
-  }
-  return String(safeValue);
-}
+import {
+  clamp,
+  formatNumber,
+  pickNumber,
+  resolveViewportSize,
+  roundedRectPath,
+  toNumber,
+} from "./uiUtils.js";
 
 const DEFAULT_STYLE = {
   padding: 16,
@@ -194,7 +136,7 @@ export class HUD {
 
       ctx.textAlign = "right";
       ctx.fillStyle = this.style.valueColor;
-      ctx.fillText(formatValue(toNumber(row.value, 0)), x + width - this.style.rowPaddingX, rowY);
+      ctx.fillText(formatNumber(toNumber(row.value, 0)), x + width - this.style.rowPaddingX, rowY);
     }
   }
 
@@ -209,7 +151,9 @@ export class HUD {
       Math.max(140, view.width - this.style.padding * 2)
     );
     const height = clamp(toNumber(this.style.healthBarHeight, 14), 10, 24);
-    const y = this.style.padding + Math.max(leftPanelHeight, rightPanelHeight) + toNumber(this.style.healthBarOffsetY, 18);
+    const preferredY = this.style.padding + Math.max(leftPanelHeight, rightPanelHeight) + toNumber(this.style.healthBarOffsetY, 18);
+    const maxY = Math.max(this.style.padding, view.height - this.style.padding - height);
+    const y = clamp(preferredY, this.style.padding, maxY);
     const x = (view.width - width) * 0.5;
     const radius = clamp(toNumber(this.style.healthBarRadius, 7), 0, height * 0.5);
 
@@ -226,12 +170,17 @@ export class HUD {
       ctx.fill();
     }
 
-    ctx.textBaseline = "alphabetic";
-    ctx.font = "600 13px Arial";
-    ctx.fillStyle = this.style.healthBarLabelColor;
-    ctx.textAlign = "left";
-    ctx.fillText("HP", x, y - 6);
-    ctx.textAlign = "right";
-    ctx.fillText(`${Math.round(hp)}/${Math.round(maxHp)}`, x + width, y - 6);
+    const topLabelY = y - 6;
+    const bottomLabelY = y + height + 14;
+    const labelY = topLabelY >= this.style.padding ? topLabelY : bottomLabelY;
+    if (labelY <= view.height - this.style.padding) {
+      ctx.textBaseline = "alphabetic";
+      ctx.font = "600 13px Arial";
+      ctx.fillStyle = this.style.healthBarLabelColor;
+      ctx.textAlign = "left";
+      ctx.fillText("HP", x, labelY);
+      ctx.textAlign = "right";
+      ctx.fillText(`${Math.round(hp)}/${Math.round(maxHp)}`, x + width, labelY);
+    }
   }
 }

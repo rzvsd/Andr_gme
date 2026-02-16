@@ -1,60 +1,8 @@
-function toNumber(value, fallback) {
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function normalizePointerInput(pointerOrX, y, pointerId) {
-  if (pointerOrX && typeof pointerOrX === "object") {
-    const xValue = toNumber(pointerOrX.x, toNumber(pointerOrX.clientX, toNumber(pointerOrX.pageX, NaN)));
-    const yValue = toNumber(pointerOrX.y, toNumber(pointerOrX.clientY, toNumber(pointerOrX.pageY, NaN)));
-    const idValue = toNumber(
-      pointerOrX.pointerId,
-      toNumber(pointerOrX.identifier, toNumber(pointerOrX.id, 0))
-    );
-
-    if (!Number.isFinite(xValue) || !Number.isFinite(yValue)) {
-      return null;
-    }
-
-    return {
-      x: xValue,
-      y: yValue,
-      id: idValue
-    };
-  }
-
-  const xValue = toNumber(pointerOrX, NaN);
-  const yValue = toNumber(y, NaN);
-  const idValue = toNumber(pointerId, 0);
-
-  if (!Number.isFinite(xValue) || !Number.isFinite(yValue)) {
-    return null;
-  }
-
-  return {
-    x: xValue,
-    y: yValue,
-    id: idValue
-  };
-}
-
-function roundedRectPath(ctx, x, y, width, height, radius) {
-  const safeRadius = clamp(radius, 0, Math.min(width, height) / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + safeRadius, y);
-  ctx.lineTo(x + width - safeRadius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
-  ctx.lineTo(x + width, y + height - safeRadius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
-  ctx.lineTo(x + safeRadius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
-  ctx.lineTo(x, y + safeRadius);
-  ctx.quadraticCurveTo(x, y, x + safeRadius, y);
-  ctx.closePath();
-}
+import {
+  toNumber,
+  normalizePointerInput,
+  roundedRectPath,
+} from "./uiUtils.js";
 
 const DEFAULT_STYLE = {
   radius: 12,

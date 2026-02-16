@@ -1,5 +1,6 @@
 import { Entity } from './Entity.js';
 import { clamp } from '../utils/math.js';
+import { PLAYER_COLOR, PLAYER_FACING_MARKER_COLOR } from '../config/constants.js';
 
 const EPSILON = 0.0001;
 
@@ -24,6 +25,8 @@ export class Player extends Entity {
     animationState = 'idle',
     shootCooldownMs = 220,
     lastShotAtMs = Number.NEGATIVE_INFINITY,
+    color = PLAYER_COLOR,
+    markerColor = PLAYER_FACING_MARKER_COLOR,
   } = {}) {
     super({ x, y, vx, vy, width, height, active });
 
@@ -34,6 +37,10 @@ export class Player extends Entity {
     this.animationState = typeof animationState === 'string' ? animationState : 'idle';
     this.shootCooldownMs = Math.max(0, toNumberOr(shootCooldownMs, 220));
     this.lastShotAtMs = toNumberOr(lastShotAtMs, Number.NEGATIVE_INFINITY);
+    this.color = typeof color === 'string' && color.length > 0 ? color : PLAYER_COLOR;
+    this.markerColor = typeof markerColor === 'string' && markerColor.length > 0
+      ? markerColor
+      : PLAYER_FACING_MARKER_COLOR;
     this.moveIntent = 0;
     this.jumpRequested = false;
   }
@@ -97,10 +104,6 @@ export class Player extends Entity {
       return;
     }
 
-    if (Math.abs(this.vy) > EPSILON) {
-      this.onGround = false;
-    }
-
     if (!this.onGround) {
       this.animationState = this.vy < 0 ? 'jump' : 'fall';
     } else if (Math.abs(this.vx) > EPSILON) {
@@ -115,23 +118,14 @@ export class Player extends Entity {
       return;
     }
 
-    let renderX = this.x;
-    let renderY = this.y;
-
-    if (camera && typeof camera.worldToScreen === 'function') {
-      const screenPosition = camera.worldToScreen(this.x, this.y);
-      renderX = toNumberOr(screenPosition?.x, NaN);
-      renderY = toNumberOr(screenPosition?.y, NaN);
-    } else if (camera) {
-      renderX = this.x - toNumberOr(camera.x, 0);
-      renderY = this.y - toNumberOr(camera.y, 0);
-    }
-
-    if (!Number.isFinite(renderX) || !Number.isFinite(renderY)) {
+    const projected = this.projectToScreen(camera);
+    if (!projected) {
       return;
     }
+    const renderX = projected.x;
+    const renderY = projected.y;
 
-    ctx.fillStyle = '#4fc3f7';
+    ctx.fillStyle = this.color;
     ctx.fillRect(renderX, renderY, this.width, this.height);
 
     const markerWidth = Math.max(3, this.width * 0.28);
@@ -139,7 +133,7 @@ export class Player extends Entity {
     const markerX = this.facing >= 0 ? renderX + this.width - markerWidth : renderX;
     const markerY = renderY + (this.height - markerHeight) * 0.5;
 
-    ctx.fillStyle = '#0c2b3a';
+    ctx.fillStyle = this.markerColor;
     ctx.fillRect(markerX, markerY, markerWidth, markerHeight);
   }
 }

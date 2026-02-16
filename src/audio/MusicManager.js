@@ -1,5 +1,9 @@
-const UNLOCK_AUDIO_DATA_URI =
-  "data:audio/wav;base64,UklGRhQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
+import {
+  canUseHtmlAudio,
+  clampVolume,
+  resolveAudioSource,
+  unlockAudioProbe,
+} from "./audioUtils.js";
 
 const DEFAULT_SCENE_TRACK_MAP = Object.freeze({
   menu: "menu_bgm",
@@ -7,20 +11,6 @@ const DEFAULT_SCENE_TRACK_MAP = Object.freeze({
   pause: "pause_bgm",
   game_over: "game_over_bgm",
 });
-
-function clampVolume(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return 1;
-  }
-  if (numeric < 0) return 0;
-  if (numeric > 1) return 1;
-  return numeric;
-}
-
-function canUseHtmlAudio() {
-  return typeof Audio !== "undefined";
-}
 
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
@@ -44,6 +34,7 @@ export class MusicManager {
     this.subscriptions = [];
     this.failedTracks = new Set();
     this.failedSourceIndexes = new Map();
+    this.missingAssetWarnings = new Set();
 
     this.currentTrack = null;
     this.currentAudio = null;
@@ -103,34 +94,14 @@ export class MusicManager {
       return;
     }
 
-    const probe = new Audio(UNLOCK_AUDIO_DATA_URI);
-    probe.muted = true;
-    probe.volume = 0;
-
-    const finish = () => {
+    unlockAudioProbe(() => {
       this.unlocked = true;
-      try {
-        probe.pause();
-      } catch {
-        // Ignore.
-      }
       if (this.pendingTrack) {
         const track = this.pendingTrack;
         this.pendingTrack = null;
         this.play(track);
       }
-    };
-
-    try {
-      const promise = probe.play();
-      if (promise && typeof promise.then === "function") {
-        promise.then(finish).catch(finish);
-      } else {
-        finish();
-      }
-    } catch {
-      finish();
-    }
+    });
   }
 
   play(track) {
@@ -203,28 +174,62 @@ export class MusicManager {
     const startVolume = this.currentAudio.volume;
     const startTime = nowMs();
 
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      const step = () => {
+        if (!this.currentAudio) {
+          this.#clearFadeTimer();
+          return;
+        }
+
+        const elapsed = nowMs() - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        const nextVolume = startVolume + (target - startVolume) * progress;
+        this.currentAudio.volume = clampVolume(nextVolume);
+
+        if (progress >= 1) {
+          this.volume = target;
+          this.#clearFadeTimer();
+          return;
+        }
+
+        this.fadeTimer = {
+          type: "raf",
+          id: globalThis.requestAnimationFrame(step),
+        };
+      };
+
+      this.fadeTimer = {
+        type: "raf",
+        id: globalThis.requestAnimationFrame(step),
+      };
+      return;
+    }
+
     if (typeof globalThis.setInterval !== "function") {
       this.currentAudio.volume = target;
       this.volume = target;
       return;
     }
 
-    this.fadeTimer = globalThis.setInterval(() => {
-      if (!this.currentAudio) {
-        this.#clearFadeTimer();
-        return;
-      }
+    this.fadeTimer = {
+      type: "interval",
+      id: globalThis.setInterval(() => {
+        if (!this.currentAudio) {
+          this.#clearFadeTimer();
+          return;
+        }
 
-      const elapsed = nowMs() - startTime;
-      const progress = Math.min(1, elapsed / duration);
-      const nextVolume = startVolume + (target - startVolume) * progress;
-      this.currentAudio.volume = clampVolume(nextVolume);
+        const elapsed = nowMs() - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        const nextVolume = startVolume + (target - startVolume) * progress;
+        this.currentAudio.volume = clampVolume(nextVolume);
 
-      if (progress >= 1) {
-        this.volume = target;
-        this.#clearFadeTimer();
-      }
-    }, 50);
+        if (progress >= 1) {
+          this.volume = target;
+          this.#clearFadeTimer();
+        }
+      }, 50),
+    };
   }
 
   setEnabled(enabled) {
@@ -355,6 +360,10 @@ export class MusicManager {
     const fallback = this.#resolveSource(track);
     if (!fallback) {
       this.failedTracks.add(track);
+      if (!this.missingAssetWarnings.has(track)) {
+        this.missingAssetWarnings.add(track);
+        console.warn(`[MusicManager] No playable sources resolved for track "${track}".`);
+      }
       if (this.currentTrack === track) {
         this.stop();
       }
@@ -367,61 +376,32 @@ export class MusicManager {
   }
 
   #resolveSource(track) {
-    const candidates = this.#getCandidates(track);
-    if (candidates.length === 0) {
-      return null;
-    }
-
     const failed = this.failedSourceIndexes.get(track);
-    for (let i = 0; i < candidates.length; i += 1) {
-      if (!failed || !failed.has(i)) {
-        return { index: i, src: candidates[i] };
-      }
-    }
-
-    return null;
-  }
-
-  #getCandidates(track) {
-    const definition = this.tracks[track];
-    const candidates = [];
-
-    if (typeof definition === "string") {
-      candidates.push(definition);
-    } else if (definition && typeof definition === "object") {
-      if (typeof definition.src === "string") candidates.push(definition.src);
-      if (typeof definition.webm === "string") candidates.push(definition.webm);
-      if (typeof definition.mp3 === "string") candidates.push(definition.mp3);
-      if (Array.isArray(definition.sources)) {
-        for (const source of definition.sources) {
-          if (typeof source === "string") {
-            candidates.push(source);
-          }
-        }
-      }
-    }
-
-    if (candidates.length === 0) {
-      candidates.push(`${this.basePath}/${track}.webm`);
-      candidates.push(`${this.basePath}/${track}.mp3`);
-    }
-
-    const unique = [];
-    const seen = new Set();
-    for (const candidate of candidates) {
-      if (typeof candidate !== "string") continue;
-      const trimmed = candidate.trim();
-      if (!trimmed || seen.has(trimmed)) continue;
-      seen.add(trimmed);
-      unique.push(trimmed);
-    }
-    return unique;
+    return resolveAudioSource(track, this.tracks[track], this.basePath, failed);
   }
 
   #clearFadeTimer() {
-    if (this.fadeTimer !== null && typeof globalThis.clearInterval === "function") {
-      globalThis.clearInterval(this.fadeTimer);
+    if (this.fadeTimer === null) {
+      return;
     }
+
+    if (typeof this.fadeTimer === "number") {
+      if (typeof globalThis.clearInterval === "function") {
+        globalThis.clearInterval(this.fadeTimer);
+      }
+      if (typeof globalThis.cancelAnimationFrame === "function") {
+        globalThis.cancelAnimationFrame(this.fadeTimer);
+      }
+      this.fadeTimer = null;
+      return;
+    }
+
+    if (this.fadeTimer.type === "raf" && typeof globalThis.cancelAnimationFrame === "function") {
+      globalThis.cancelAnimationFrame(this.fadeTimer.id);
+    } else if (this.fadeTimer.type === "interval" && typeof globalThis.clearInterval === "function") {
+      globalThis.clearInterval(this.fadeTimer.id);
+    }
+
     this.fadeTimer = null;
   }
 }
