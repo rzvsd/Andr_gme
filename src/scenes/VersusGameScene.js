@@ -26,15 +26,31 @@ const PLATFORM_COLOR = "#245c13";
 const BASE_STRIP_COLOR = "#b7aea2";
 const SKY_COLOR = "#aab7cc";
 const DIVIDER_COLOR = "rgba(153, 131, 188, 0.86)";
+const DIVIDER_WIDTH = 6;
+const DIVIDER_TOP_RATIO = 0.26;
+const DIVIDER_MIN_HEIGHT = 150;
+const DIVIDER_MAX_HEIGHT = 230;
 const BULLET_SPEED = 780;
 const BULLET_LIFETIME_MS = 2500;
 const BULLET_OFFSCREEN_MARGIN = 180;
+const BULLET_RANGE_MARGIN = 140;
 const PLAYER_WIDTH = 28;
 const PLAYER_HEIGHT = 40;
 const PLAYER_Y_OFFSET = 2;
 const PLAYER_HEALTH = 100;
 const SHOOT_COLOR_P1 = "#e33f3f";
 const SHOOT_COLOR_P2 = "#3f53d7";
+const PLATFORM_MIN_WIDTH = 320;
+const PLATFORM_MAX_WIDTH = 620;
+const PLATFORM_WIDTH_RATIO = 0.34;
+const PLATFORM_MIN_GAP = 260;
+const PLATFORM_MAX_GAP = 520;
+const PLATFORM_GAP_RATIO = 0.22;
+const WORLD_EDGE_PAD_MIN = 90;
+const WORLD_EDGE_PAD_MAX = 220;
+const WORLD_EDGE_PAD_RATIO = 0.08;
+const P1_SPAWN_RATIO = 0.74;
+const P2_SPAWN_RATIO = 0.26;
 
 const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 const center = (entity) => ({
@@ -161,14 +177,43 @@ export class VersusGameScene {
   }
 
   layoutWorld(viewWidth, viewHeight) {
-    this.worldWidth = Math.max(WORLD_MIN_WIDTH, Math.round(viewWidth * 2.3));
-    this.groundY = Math.max(0, viewHeight - GROUND_STRIP_H);
-    this.platformY = Math.max(80, Math.round(viewHeight * 0.84));
+    const width = Math.max(1, Number(viewWidth) || 1);
+    const height = Math.max(1, Number(viewHeight) || 1);
 
-    const edgePad = Math.max(120, Math.round(viewWidth * 0.12));
-    const platformWidth = Math.max(320, Math.round(viewWidth * 0.48));
-    const leftX = edgePad;
-    const rightX = Math.max(leftX + platformWidth + 260, this.worldWidth - edgePad - platformWidth);
+    this.groundY = Math.max(0, height - GROUND_STRIP_H);
+    this.platformY = Math.max(80, Math.round(height * 0.84));
+
+    const edgePad = clamp(
+      Math.round(width * WORLD_EDGE_PAD_RATIO),
+      WORLD_EDGE_PAD_MIN,
+      WORLD_EDGE_PAD_MAX
+    );
+    const platformWidth = clamp(
+      Math.round(width * PLATFORM_WIDTH_RATIO),
+      PLATFORM_MIN_WIDTH,
+      PLATFORM_MAX_WIDTH
+    );
+    let platformGap = clamp(
+      Math.round(width * PLATFORM_GAP_RATIO),
+      PLATFORM_MIN_GAP,
+      PLATFORM_MAX_GAP
+    );
+
+    const maxBulletTravel = (BULLET_SPEED * BULLET_LIFETIME_MS) / 1000;
+    const spawnWidthFactor = 1 + P2_SPAWN_RATIO - P1_SPAWN_RATIO;
+    const maxSpawnDistance = Math.max(420, maxBulletTravel - BULLET_RANGE_MARGIN);
+    const currentSpawnDistance = platformGap + platformWidth * spawnWidthFactor;
+    if (currentSpawnDistance > maxSpawnDistance) {
+      const cappedGap = Math.floor(maxSpawnDistance - platformWidth * spawnWidthFactor);
+      platformGap = clamp(cappedGap, PLATFORM_MIN_GAP, platformGap);
+    }
+
+    const duelSpan = platformWidth * 2 + platformGap;
+    this.worldWidth = Math.max(WORLD_MIN_WIDTH, duelSpan + edgePad * 2);
+
+    const centerX = this.worldWidth * 0.5;
+    const leftX = Math.round(centerX - platformGap * 0.5 - platformWidth);
+    const rightX = Math.round(centerX + platformGap * 0.5);
 
     this.applyPlatformLayout([
       { x: leftX, y: this.platformY, width: platformWidth, height: 30, color: PLATFORM_COLOR },
@@ -177,11 +222,11 @@ export class VersusGameScene {
     ]);
 
     this.spawnPoints[0] = {
-      x: leftX + platformWidth * 0.74 - PLAYER_WIDTH * 0.5,
+      x: leftX + platformWidth * P1_SPAWN_RATIO - PLAYER_WIDTH * 0.5,
       y: this.platformY - PLAYER_HEIGHT - PLAYER_Y_OFFSET,
     };
     this.spawnPoints[1] = {
-      x: rightX + platformWidth * 0.26 - PLAYER_WIDTH * 0.5,
+      x: rightX + platformWidth * P2_SPAWN_RATIO - PLAYER_WIDTH * 0.5,
       y: this.platformY - PLAYER_HEIGHT - PLAYER_Y_OFFSET,
     };
   }
@@ -506,8 +551,16 @@ export class VersusGameScene {
     this.renderWorld(ctx, this.p2Camera, halfWidth, fullHeight);
     ctx.restore();
 
+    const dividerHeight = Math.min(
+      fullHeight,
+      clamp(
+        Math.round(fullHeight * DIVIDER_TOP_RATIO),
+        DIVIDER_MIN_HEIGHT,
+        DIVIDER_MAX_HEIGHT
+      )
+    );
     ctx.fillStyle = DIVIDER_COLOR;
-    ctx.fillRect(halfWidth - 3, 0, 6, fullHeight);
+    ctx.fillRect(halfWidth - DIVIDER_WIDTH * 0.5, 0, DIVIDER_WIDTH, dividerHeight);
 
     this.versusHUD.render(ctx, fullWidth, fullHeight);
     this.muteButton.render(ctx, fullWidth, fullHeight);
