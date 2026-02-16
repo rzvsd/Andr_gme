@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="64" viewBox="0 0 256 64">
+  <rect width="256" height="64" fill="#1d1f21"/>
+  <rect x="10" y="10" width="44" height="44" fill="#ef476f"/>
+  <rect x="74" y="10" width="44" height="44" fill="#ff7f50"/>
+  <rect x="138" y="10" width="44" height="44" fill="#f2c14e"/>
+  <rect x="202" y="10" width="44" height="44" fill="#e63946"/>
+  <text x="15" y="24" font-size="9" font-family="monospace" fill="#ffffff">grunt</text>
+  <text x="79" y="24" font-size="9" font-family="monospace" fill="#ffffff">sniper</text>
+  <text x="143" y="24" font-size="9" font-family="monospace" fill="#000000">rusher</text>
+  <text x="207" y="24" font-size="9" font-family="monospace" fill="#ffffff">tank</text>
+</svg>

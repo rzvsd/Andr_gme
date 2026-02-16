@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "temporaryPlaceholders": true,
+  "assets": [
+    {
+      "name": "player_sheet",
+      "path": "/sprites/player_sheet.svg",
+      "usage": "Player animation sheet placeholder. Contracts: idle, run, jump, fall."
+    },
+    {
+      "name": "enemy_sheet",
+      "path": "/sprites/enemy_sheet.svg",
+      "usage": "Enemy animation sheet placeholder for common enemy classes."
+    },
+    {
+      "name": "bullets",
+      "path": "/sprites/bullets.svg",
+      "usage": "Projectile sprite placeholder for player and enemy bullets."
+    },
+    {
+      "name": "platform_tiles",
+      "path": "/sprites/platform_tiles.svg",
+      "usage": "Platform and ground tile placeholder sheet."
+    },
+    {
+      "name": "particles",
+      "path": "/sprites/particles.svg",
+      "usage": "Effects placeholder for spark, smoke, and impact particles."
+    },
+    {
+      "name": "background_layer_1",
+      "path": "/sprites/background_layer_1.svg",
+      "usage": "Far parallax background placeholder layer."
+    },
+    {
+      "name": "background_layer_2",
+      "path": "/sprites/background_layer_2.svg",
+      "usage": "Near parallax background placeholder layer."
+    }
+  ]
+}

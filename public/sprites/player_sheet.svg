@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="64" viewBox="0 0 256 64">
+  <rect width="256" height="64" fill="#101820"/>
+  <rect x="8" y="8" width="48" height="48" fill="#3a86ff"/>
+  <rect x="72" y="8" width="48" height="48" fill="#3a86ff" opacity="0.85"/>
+  <rect x="136" y="8" width="48" height="48" fill="#3a86ff" opacity="0.7"/>
+  <rect x="200" y="8" width="48" height="48" fill="#3a86ff" opacity="0.55"/>
+  <text x="12" y="22" font-size="10" font-family="monospace" fill="#ffffff">idle</text>
+  <text x="77" y="22" font-size="10" font-family="monospace" fill="#ffffff">run</text>
+  <text x="139" y="22" font-size="10" font-family="monospace" fill="#ffffff">jump</text>
+  <text x="203" y="22" font-size="10" font-family="monospace" fill="#ffffff">fall</text>
+</svg>
