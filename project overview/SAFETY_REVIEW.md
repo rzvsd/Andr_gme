@@ -281,6 +281,24 @@ Full rebuild of gameplay to match reference screenshot. New `VersusGameScene` as
 
 - `[DONE]` **VERSUS-015: Mute-button touch isolation.** Mute button pointer events are captured by `mutePointerId` tracking (`VersusGameScene.js:538-543`). The captured pointer is excluded from `VersusInput` routing so it cannot leak into movement/shoot touch handling. Prevents accidental player input on mute tap.
 
+#### Playtest Bug
+
+- `[TBD]` **🔴 VERSUS-016: Bullets cannot reach opponent on wide screens (Bug 4).** User reports bullets disappearing before reaching the other player.
+
+  **Root cause confirmed:** Arena scaling at `VersusGameScene.js:164` — `this.worldWidth = Math.max(WORLD_MIN_WIDTH, Math.round(viewWidth * 2.3))`. On wider screens, worldWidth grows proportionally, pushing P2's platform farther right via `rightX = Math.max(... , this.worldWidth - edgePad - platformWidth)` (L171). Spawn-to-spawn distance exceeds bullet travel range (780px/s × 2.5s = 1950px max).
+
+  | Screen width | worldWidth | Spawn distance | Bullet range | Reaches? |
+  |---|---|---|---|---|
+  | 1366 | 3142 | ~1240px | 1950px | ✅ |
+  | 1920 | 4416 | ~1910px | 1950px | ⚠️ barely |
+  | 2560 | 5888 | ~2670px | 1950px | ❌ |
+
+  **Fix plan (builder-owned):**
+  1. Cap max duel gap in `layoutWorld()` so platform distance never exceeds ~1400px regardless of viewport width
+  2. Add runtime assertion that spawn distance stays within 85% of bullet range
+  3. Keep full-height divider (matches reference) but consider thinner/more translucent to reduce "wall" perception
+  4. Validate at 1366/1600/1920/2560 widths
+
 ---
 
 ## Pre-Launch Readiness Assessment (Post Phase 7)
