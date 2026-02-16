@@ -1,17 +1,21 @@
 import {
   canUseHtmlAudio,
   clampVolume,
+  resolveAliasedDefinition,
   resolveAudioSource,
   unlockAudioProbe,
 } from "./audioUtils.js";
 
 const DEFAULT_EVENT_SOUND_MAP = Object.freeze({
-  bullet_fired: "pew",
-  player_hit: "hit",
-  enemy_killed: "explosion",
-  bullet_dodged: "whoosh",
-  wave_cleared: "fanfare",
-  ui_click: "ui_click",
+  bullet_fired: "sfx_shoot",
+  player_hit: "sfx_hit",
+  enemy_killed: "sfx_explosion",
+  bullet_dodged: "sfx_whoosh",
+  wave_cleared: "sfx_fanfare",
+  ui_click: "sfx_click",
+  versus_player_hit: "sfx_hit",
+  versus_dodge: "sfx_whoosh",
+  versus_kill: "sfx_explosion",
 });
 
 export class AudioManager {
@@ -51,6 +55,9 @@ export class AudioManager {
       ["enemy_killed", () => this.play(this.eventSoundMap.enemy_killed)],
       ["bullet_dodged", () => this.play(this.eventSoundMap.bullet_dodged)],
       ["wave_cleared", () => this.play(this.eventSoundMap.wave_cleared)],
+      ["versus:player_hit", () => this.play(this.eventSoundMap.versus_player_hit)],
+      ["versus:dodge", () => this.play(this.eventSoundMap.versus_dodge)],
+      ["versus:kill", () => this.play(this.eventSoundMap.versus_kill)],
       [
         "ui_click",
         () => {
@@ -84,14 +91,19 @@ export class AudioManager {
   }
 
   unlock() {
-    if (this.disposed || this.unlocked || !canUseHtmlAudio()) {
-      if (!canUseHtmlAudio()) {
-        this.unlocked = true;
-      }
+    if (this.disposed || this.unlocked) {
       return;
     }
 
-    unlockAudioProbe(() => {
+    if (!canUseHtmlAudio()) {
+      this.unlocked = true;
+      return;
+    }
+
+    unlockAudioProbe((success) => {
+      if (this.disposed || !success) {
+        return;
+      }
       this.unlocked = true;
       this.#flushPendingPlays();
     });
@@ -222,7 +234,8 @@ export class AudioManager {
 
   #resolveSource(name) {
     const failed = this.failedSourceIndexes.get(name);
-    return resolveAudioSource(name, this.sounds[name], this.basePath, failed);
+    const definition = resolveAliasedDefinition(name, this.sounds);
+    return resolveAudioSource(name, definition, this.basePath, failed);
   }
 
   #markSourceFailed(name, sourceIndex) {

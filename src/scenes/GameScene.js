@@ -62,7 +62,19 @@ export class GameScene {
     this.assetsErrorLogged = false;
     this.fallbackMode = false;
     this.preloadPromise = null;
-    this.enemyPool = new ObjectPool(() => new Enemy(), (e) => e?.configure?.("GRUNT", { x: -9999, y: -9999 }));
+    this.enemyPool = new ObjectPool(
+      () => new Enemy(),
+      (enemy) => {
+        if (!enemy) return;
+        enemy.deactivate?.();
+        enemy.x = -9999;
+        enemy.y = -9999;
+        enemy.vx = 0;
+        enemy.vy = 0;
+        enemy.moveIntent = 0;
+        enemy.state = "idle";
+      }
+    );
     this.playerBulletPool = new ObjectPool(() => new Bullet(), (b) => b?.reset?.());
     this.enemyBulletPool = new ObjectPool(() => new Bullet(), (b) => b?.reset?.());
     this.enemyPool.preallocate(40);
@@ -117,6 +129,9 @@ export class GameScene {
     if (!this.preloadPromise) this.preloadPromise = this.preloadAssets();
     if (!this.player || payload.restart === true) this.resetRun(game);
     this.layout(game.viewWidth, game.viewHeight);
+    if (this.player) {
+      this.updateStaticLevelGeometry(game.viewHeight || 1);
+    }
     game.input?.setTouchControlsEnabled?.(false);
     if (!this.keyBound) { window.addEventListener("keydown", this.onKeyDown); this.keyBound = true; }
     this.bindEvents(game.eventBus);
@@ -271,7 +286,7 @@ export class GameScene {
 
   layout(width, height) {
     const w = Math.max(1, Number(width) || 1), h = Math.max(1, Number(height) || 1);
-    this.worldWidth = Math.max(this.worldWidth, w * WORLD_MULT, WORLD_MIN_WIDTH); this.groundY = h - GROUND_H;
+    this.worldWidth = Math.max(WORLD_MIN_WIDTH, w * WORLD_MULT); this.groundY = h - GROUND_H;
     const r = Math.max(46, Math.min(68, w * 0.075)), pad = 18, bs = Math.max(56, Math.min(74, w * 0.08));
     this.joystick.setCenter(pad + r, h - pad - r); this.joystick.setRadius(r, r * 0.46);
     this.jumpButton.setBounds(w - pad - bs * 2 - 12, h - pad - bs, bs, bs);
@@ -537,7 +552,7 @@ export class GameScene {
 
   handlePointerUp(pointer, game) {
     const id = pointer?.id ?? 0, owner = this.pointerOwners.get(id); this.pointerOwners.delete(id);
-    if (owner === "pause") { const click = this.pauseButton.handlePointerUp(pointer); if (click) { this.pauseRequested = true; emit(game?.eventBus, "ui_click", { source: "pause" }); } return true; }
+    if (owner === "pause") { const click = this.pauseButton.handlePointerUp(pointer); if (click) this.pauseRequested = true; return true; }
     if (owner === "jump") { const click = this.jumpButton.handlePointerUp(pointer); if (click) { this.jumpQueued = true; emit(game?.eventBus, "ui_click", { source: "jump" }); } return true; }
     if (owner === "shoot") { const click = this.shootButton.handlePointerUp(pointer); if (click) { this.shootQueued = true; emit(game?.eventBus, "ui_click", { source: "shoot" }); } return true; }
     if (owner === "joystick") return this.joystick.handlePointerUp(pointer);

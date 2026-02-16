@@ -51,6 +51,7 @@ const WORLD_EDGE_PAD_MAX = 220;
 const WORLD_EDGE_PAD_RATIO = 0.08;
 const P1_SPAWN_RATIO = 0.74;
 const P2_SPAWN_RATIO = 0.26;
+const VERSUS_KILLS_TO_WIN = 5;
 
 const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 const center = (entity) => ({
@@ -94,6 +95,9 @@ export class VersusGameScene {
     this.cachedNowMs = 0;
     this.keyBound = false;
     this.exitRequested = false;
+    this.matchEnded = false;
+    this.roundStartedAtMs = 0;
+    this.killsToWin = VERSUS_KILLS_TO_WIN;
     this.gameInputWasAttached = false;
     this.onKeyDown = (event) => {
       const code = event?.code;
@@ -118,6 +122,8 @@ export class VersusGameScene {
     this.versusInput.attach();
     this.versusInput.reset();
     this.exitRequested = false;
+    this.matchEnded = false;
+    this.roundStartedAtMs = nowMs();
 
     this.gameInputWasAttached = Boolean(game?.input?.attached);
     if (this.gameInputWasAttached) {
@@ -154,6 +160,8 @@ export class VersusGameScene {
       this.keyBound = false;
     }
     this.exitRequested = false;
+    this.matchEnded = false;
+    this.roundStartedAtMs = 0;
     if (this.gameInputWasAttached) {
       game?.input?.attach?.();
       this.gameInputWasAttached = false;
@@ -357,7 +365,7 @@ export class VersusGameScene {
     }
 
     const dt = Number.isFinite(deltaSeconds) && deltaSeconds > 0 ? deltaSeconds : 0;
-    if (dt <= 0 || !this.p1 || !this.p2) {
+    if (dt <= 0 || !this.p1 || !this.p2 || this.matchEnded) {
       return;
     }
 
@@ -417,6 +425,12 @@ export class VersusGameScene {
     }
 
     this.recycleBullets();
+
+    const terminalResult = this.getTerminalResult();
+    if (terminalResult) {
+      this.finishMatch(game, terminalResult);
+      return;
+    }
 
     const readyRespawns = this.roundManager?.update?.(dt) ?? [];
     for (const playerIndex of readyRespawns) {
@@ -525,6 +539,105 @@ export class VersusGameScene {
       bulletsDodged: p2Stats.dodges,
       deaths: p2Stats.deaths,
       kills: p2Stats.kills,
+    });
+  }
+
+  getTerminalResult() {
+    const p1Stats = this.roundManager?.getStats?.(0) ?? { kills: 0, deaths: 0, dodges: 0 };
+    const p2Stats = this.roundManager?.getStats?.(1) ?? { kills: 0, deaths: 0, dodges: 0 };
+    const p1Kills = Math.max(0, Math.round(Number(p1Stats.kills) || 0));
+    const p2Kills = Math.max(0, Math.round(Number(p2Stats.kills) || 0));
+
+    if (p1Kills < this.killsToWin && p2Kills < this.killsToWin) {
+      return null;
+    }
+
+    const p1Deaths = Math.max(0, Math.round(Number(p1Stats.deaths) || 0));
+    const p2Deaths = Math.max(0, Math.round(Number(p2Stats.deaths) || 0));
+    const p1Dodges = Math.max(0, Math.round(Number(p1Stats.dodges) || 0));
+    const p2Dodges = Math.max(0, Math.round(Number(p2Stats.dodges) || 0));
+
+    let winnerIndex = 0;
+    if (p1Kills !== p2Kills) {
+      winnerIndex = p1Kills > p2Kills ? 0 : 1;
+    } else if (p1Deaths !== p2Deaths) {
+      winnerIndex = p1Deaths < p2Deaths ? 0 : 1;
+    } else if (p1Dodges !== p2Dodges) {
+      winnerIndex = p1Dodges > p2Dodges ? 0 : 1;
+    }
+
+    return {
+      winnerIndex,
+      loserIndex: winnerIndex === 0 ? 1 : 0,
+      killsToWin: this.killsToWin,
+      p1Kills,
+      p2Kills,
+      p1Deaths,
+      p2Deaths,
+      p1Dodges,
+      p2Dodges,
+    };
+  }
+
+  finishMatch(game, result) {
+    if (this.matchEnded) {
+      return;
+    }
+    this.matchEnded = true;
+
+    const elapsedMs = this.roundStartedAtMs > 0 ? Math.max(0, nowMs() - this.roundStartedAtMs) : 0;
+    const timeSeconds = Math.floor(elapsedMs / 1000);
+    const winnerKills = result.winnerIndex === 0 ? result.p1Kills : result.p2Kills;
+    const winnerDeaths = result.winnerIndex === 0 ? result.p1Deaths : result.p2Deaths;
+    const winnerDodges = result.winnerIndex === 0 ? result.p1Dodges : result.p2Dodges;
+
+    const stats = {
+      mode: "versus",
+      sourceScene: "versus",
+      score: winnerKills,
+      kills: winnerKills,
+      deaths: winnerDeaths,
+      dodges: winnerDodges,
+      wave: result.killsToWin,
+      highScore: 0,
+      timeSeconds,
+      winnerIndex: result.winnerIndex,
+      loserIndex: result.loserIndex,
+      killsToWin: result.killsToWin,
+      p1Kills: result.p1Kills,
+      p2Kills: result.p2Kills,
+      p1Deaths: result.p1Deaths,
+      p2Deaths: result.p2Deaths,
+      p1Dodges: result.p1Dodges,
+      p2Dodges: result.p2Dodges,
+    };
+
+    const versus = {
+      winnerIndex: result.winnerIndex,
+      loserIndex: result.loserIndex,
+      killsToWin: result.killsToWin,
+      p1Kills: result.p1Kills,
+      p2Kills: result.p2Kills,
+      p1Deaths: result.p1Deaths,
+      p2Deaths: result.p2Deaths,
+      p1Dodges: result.p1Dodges,
+      p2Dodges: result.p2Dodges,
+      timeSeconds,
+    };
+
+    game.sceneData = {
+      ...game.sceneData,
+      mode: "versus",
+      sourceScene: "versus",
+      stats,
+      versusResult: versus,
+    };
+
+    game?.switchScene?.("game_over", {
+      mode: "versus",
+      sourceScene: "versus",
+      stats,
+      versus,
     });
   }
 

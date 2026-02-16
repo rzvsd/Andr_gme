@@ -1,15 +1,17 @@
 import {
   canUseHtmlAudio,
   clampVolume,
+  resolveAliasedDefinition,
   resolveAudioSource,
   unlockAudioProbe,
 } from "./audioUtils.js";
 
 const DEFAULT_SCENE_TRACK_MAP = Object.freeze({
-  menu: "menu_bgm",
-  game: "battle_bgm",
-  pause: "pause_bgm",
-  game_over: "game_over_bgm",
+  menu: "bgm_menu",
+  game: "bgm_battle",
+  versus: "bgm_battle",
+  pause: "bgm_pause",
+  game_over: "bgm_gameover",
 });
 
 function nowMs() {
@@ -87,14 +89,19 @@ export class MusicManager {
   }
 
   unlock() {
-    if (this.disposed || this.unlocked || !canUseHtmlAudio()) {
-      if (!canUseHtmlAudio()) {
-        this.unlocked = true;
-      }
+    if (this.disposed || this.unlocked) {
       return;
     }
 
-    unlockAudioProbe(() => {
+    if (!canUseHtmlAudio()) {
+      this.unlocked = true;
+      return;
+    }
+
+    unlockAudioProbe((success) => {
+      if (this.disposed || !success) {
+        return;
+      }
       this.unlocked = true;
       if (this.pendingTrack) {
         const track = this.pendingTrack;
@@ -271,7 +278,13 @@ export class MusicManager {
     if (!sceneName) return;
 
     const normalized = sceneName.toLowerCase();
-    if (normalized !== "menu" && normalized !== "game" && normalized !== "pause" && normalized !== "game_over") {
+    if (
+      normalized !== "menu" &&
+      normalized !== "game" &&
+      normalized !== "versus" &&
+      normalized !== "pause" &&
+      normalized !== "game_over"
+    ) {
       return;
     }
 
@@ -377,7 +390,8 @@ export class MusicManager {
 
   #resolveSource(track) {
     const failed = this.failedSourceIndexes.get(track);
-    return resolveAudioSource(track, this.tracks[track], this.basePath, failed);
+    const definition = resolveAliasedDefinition(track, this.tracks);
+    return resolveAudioSource(track, definition, this.basePath, failed);
   }
 
   #clearFadeTimer() {

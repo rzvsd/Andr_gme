@@ -11,6 +11,11 @@ import {
 
 const ButtonClass = ButtonModule.Button;
 const ScoreBoardClass = ScoreBoardModule.ScoreBoard;
+const MODE_VERSUS = "versus";
+
+const normalizeMode = (value) => (
+  typeof value === "string" ? value.trim().toLowerCase() : ""
+);
 
 function copyObject(target, value) {
   if (!isObject(value)) {
@@ -49,7 +54,7 @@ function normalizeStats(raw) {
   };
 }
 
-function collectStats(game, transition) {
+function collectMergedData(game, transition) {
   const merged = {};
   copyObject(merged, game?.sceneData);
   copyObject(merged, game?.sceneData?.stats);
@@ -60,7 +65,67 @@ function collectStats(game, transition) {
   copyObject(merged, payload?.data);
   copyObject(merged, payload?.event);
 
-  return normalizeStats(merged);
+  return merged;
+}
+
+function collectStats(game, transition) {
+  return normalizeStats(collectMergedData(game, transition));
+}
+
+function collectResultMeta(game, transition) {
+  const payload = isObject(transition?.payload) ? transition.payload : transition;
+  const payloadStats = isObject(payload?.stats) ? payload.stats : null;
+  const payloadData = isObject(payload?.data) ? payload.data : null;
+  const payloadEvent = isObject(payload?.event) ? payload.event : null;
+  const merged = collectMergedData(game, transition);
+
+  const versusCandidates = [
+    payload?.versus,
+    payload?.versusResult,
+    payloadStats?.versus,
+    payloadStats?.versusResult,
+    payloadData?.versus,
+    payloadData?.versusResult,
+    payloadEvent?.versus,
+    payloadEvent?.versusResult,
+  ];
+  let versus = null;
+  for (const candidate of versusCandidates) {
+    if (isObject(candidate)) {
+      versus = candidate;
+      break;
+    }
+  }
+
+  const modeCandidates = [
+    normalizeMode(payload?.mode),
+    normalizeMode(payload?.sourceMode),
+    normalizeMode(payload?.sourceScene),
+    normalizeMode(payload?.from),
+    normalizeMode(payloadStats?.mode),
+    normalizeMode(payloadStats?.sourceMode),
+    normalizeMode(payloadStats?.sourceScene),
+    normalizeMode(payloadData?.mode),
+    normalizeMode(payloadEvent?.mode),
+    normalizeMode(transition?.from),
+  ];
+  const isVersus = modeCandidates.includes(MODE_VERSUS) || isObject(versus);
+
+  const winnerIndex = Math.round(asNumber(versus?.winnerIndex, asNumber(merged.winnerIndex, -1)));
+  const loserIndex = Math.round(asNumber(versus?.loserIndex, asNumber(merged.loserIndex, -1)));
+  const rawKillsToWin = asNumber(versus?.killsToWin, asNumber(merged.killsToWin, -1));
+
+  return {
+    isVersus,
+    mode: isVersus ? MODE_VERSUS : "game",
+    winnerIndex: winnerIndex >= 0 ? winnerIndex : -1,
+    loserIndex: loserIndex >= 0 ? loserIndex : -1,
+    killsToWin: rawKillsToWin >= 1 ? Math.round(rawKillsToWin) : null,
+    p1Kills: Math.max(0, Math.round(asNumber(versus?.p1Kills, asNumber(merged.p1Kills, 0)))),
+    p2Kills: Math.max(0, Math.round(asNumber(versus?.p2Kills, asNumber(merged.p2Kills, 0)))),
+    p1Deaths: Math.max(0, Math.round(asNumber(versus?.p1Deaths, asNumber(merged.p1Deaths, 0)))),
+    p2Deaths: Math.max(0, Math.round(asNumber(versus?.p2Deaths, asNumber(merged.p2Deaths, 0)))),
+  };
 }
 
 export class GameOverScene {
@@ -72,6 +137,9 @@ export class GameOverScene {
     this.menuButton = null;
     this.scoreBoard = null;
     this.stats = normalizeStats({});
+    this.resultMeta = collectResultMeta({}, {});
+    this.titleText = "GAME OVER";
+    this.subtitleText = "";
     this.scoreBoardRect = { x: 0, y: 0, width: 0, height: 0 };
     this.activePointerId = null;
     this.activeButton = null;
@@ -79,8 +147,15 @@ export class GameOverScene {
 
   onEnter(game, transition) {
     this.stats = collectStats(game, transition);
+    this.resultMeta = collectResultMeta(game, transition);
+    this.titleText = this.resultMeta.isVersus ? "VERSUS RESULT" : "GAME OVER";
+    this.subtitleText = this.resultMeta.isVersus ? this.getVersusSubtitle() : "";
 
     this.retryButton = this.createButton("Retry", () => {
+      if (this.resultMeta.isVersus) {
+        game.switchScene("versus", { restart: true });
+        return;
+      }
       game.switchScene("game", { restart: true });
     });
     this.menuButton = this.createButton("Menu", () => {
@@ -154,7 +229,13 @@ export class GameOverScene {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = "700 52px Arial";
-    ctx.fillText("GAME OVER", this.width * 0.5, this.height * 0.13);
+    ctx.fillText(this.titleText, this.width * 0.5, this.height * 0.13);
+
+    if (this.subtitleText) {
+      ctx.fillStyle = "#ffd7d7";
+      ctx.font = "600 24px Arial";
+      ctx.fillText(this.subtitleText, this.width * 0.5, this.height * 0.18);
+    }
 
     this.renderScoreBoard(ctx, game);
 
@@ -528,15 +609,7 @@ export class GameOverScene {
     ctx.font = "600 24px Arial";
     ctx.fillText("Final Stats", startX, rect.y + 30);
 
-    const rows = [
-      ["Score", this.stats.score],
-      ["Kills", this.stats.kills],
-      ["Dodges", this.stats.dodges],
-      ["Wave", this.stats.wave],
-      ["Deaths", this.stats.deaths],
-      ["Time", `${this.stats.timeSeconds}s`],
-      ["High Score", this.stats.highScore],
-    ];
+    const rows = this.getScoreRows();
 
     ctx.font = "500 21px Arial";
     for (let i = 0; i < rows.length; i += 1) {
@@ -553,6 +626,48 @@ export class GameOverScene {
       ctx.fillText(String(value), valueX, y);
     }
     ctx.restore();
+  }
+
+  getVersusSubtitle() {
+    const winner = this.resultMeta.winnerIndex === 0
+      ? "Player 1"
+      : this.resultMeta.winnerIndex === 1
+        ? "Player 2"
+        : "Match";
+    const score = `${this.resultMeta.p1Kills}-${this.resultMeta.p2Kills}`;
+    return `${winner} wins (${score})`;
+  }
+
+  getScoreRows() {
+    if (this.resultMeta.isVersus) {
+      const winnerLabel = this.resultMeta.winnerIndex === 0
+        ? "Player 1"
+        : this.resultMeta.winnerIndex === 1
+          ? "Player 2"
+          : "N/A";
+      const rows = [
+        ["Winner", winnerLabel],
+        ["P1 Kills", this.resultMeta.p1Kills],
+        ["P2 Kills", this.resultMeta.p2Kills],
+        ["P1 Deaths", this.resultMeta.p1Deaths],
+        ["P2 Deaths", this.resultMeta.p2Deaths],
+        ["Time", `${this.stats.timeSeconds}s`],
+      ];
+      if (this.resultMeta.killsToWin !== null) {
+        rows.splice(1, 0, ["Target", this.resultMeta.killsToWin]);
+      }
+      return rows;
+    }
+
+    return [
+      ["Score", this.stats.score],
+      ["Kills", this.stats.kills],
+      ["Dodges", this.stats.dodges],
+      ["Wave", this.stats.wave],
+      ["Deaths", this.stats.deaths],
+      ["Time", `${this.stats.timeSeconds}s`],
+      ["High Score", this.stats.highScore],
+    ];
   }
 
   routePointer(methodName, pointer, game) {

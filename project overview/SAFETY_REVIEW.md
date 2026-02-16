@@ -301,6 +301,44 @@ Full rebuild of gameplay to match reference screenshot. New `VersusGameScene` as
 
 ---
 
+## External Audit — Full Codebase Review (2026-02-16 14:49)
+
+> **Original grade: 6/10. Post-fix grade: 8/10 — Production viable with caveats.** All 12 findings addressed and verified by Final Boss.
+
+### Final Boss Verification — Fix Round (2026-02-16 15:31)
+
+All 12 fixes verified against source. Build, tests, and cap:sync pass.
+
+| # | Severity | Finding | Fix Verified |
+|---|---|---|---|
+| 1 | 🔴→✅ | Audio unlock false-positive | `unlockAudioProbe` now passes `success` boolean to callback (`audioUtils.js:57,72`). Both `AudioManager.unlock()` (L103-104) and `MusicManager.unlock()` (L101-102) check `!success` before setting `unlocked = true`. Reject path no longer marks unlocked. |
+| 2 | 🔴→✅ | Audio assets + naming mismatch | Alias system added (`audioUtils.js:81-104`) maps between code names and doc names. `.wav` fallback candidates auto-generated for all aliases (L141-145). 25 placeholder `.wav` files in `public/audio/`. |
+| 3 | 🔴→✅ | Capacitor CLI missing | `@capacitor/cli: ^7.0.0` added to devDependencies (`package.json:19`). `capacitor.config.json` present in repo root. `cap:sync` passes. |
+| 4 | 🔴→✅ | No test infrastructure | `vitest: ^2.1.8` in devDependencies (`package.json:21`). `test` and `test:watch` scripts added (L8-9). 3 real test files: `settings.test.js`, `storage.test.js`, `background.test.js` (6 tests, all pass). |
+| 5 | 🟡→✅ | Versus music routing missing | `versus: "bgm_battle"` added to `DEFAULT_SCENE_TRACK_MAP` (`MusicManager.js:12`). Versus mode now gets battle music. |
+| 6 | 🟡→✅ | Pause double `ui_click` | `handlePointerUp` pause branch (L555) no longer emits `ui_click` — only sets `pauseRequested`. Update loop at L296 emits once. Single emit confirmed. |
+| 7 | 🟡→✅ | Enemy pool reactivation | Release callback (L65-70) now calls `enemy.deactivate()` instead of `configure()`. Pooled enemies stay `active = false`. |
+| 8 | 🟡→✅ | Versus SFX unwired | AudioManager now subscribes to `versus:player_hit`, `versus:dodge`, `versus:kill` (L58-60) with corresponding sound map entries. |
+| 9 | 🟡→✅ | No versus game-over flow | `VERSUS_KILLS_TO_WIN = 5` (L54). `getTerminalResult()` (L545-580) checks kill threshold with tiebreakers (deaths → dodges). `finishMatch()` (L582-642) transitions to `game_over` scene with full stats. `GameOverScene` (L154-157) handles `isVersus` retry → `versus` scene. |
+| 10 | 🟢→✅ | WorldWidth never shrinks | `GameScene.layout` L289 now uses `Math.max(WORLD_MIN_WIDTH, w * WORLD_MULT)` without referencing `this.worldWidth`. World can shrink on resize. |
+| 11 | 🟢→✅ | Settings/storage unvalidated | `normalizeSettings()` (L72-85) with typed coercers (`coerceBoolean`, `coerceVolume`, `coerceControlScheme`). `storage.js` L7-23 adds `safeWarn()` for error reporting. |
+| 12 | 🟢→✅ | Background cache unbounded | `#trimImageCache()` (L142-150) auto-evicts oldest entries via Map iteration order. Called after every cache set (L138). |
+
+### Updated Final Boss Notes
+
+**Revised grade: 8/10.** All 12 findings fixed. The codebase now has:
+- ✅ Working audio pipeline (unlock race fixed, alias resolution, placeholder assets)
+- ✅ Android packaging (Capacitor CLI + config)
+- ✅ Test infrastructure (vitest + 3 test suites)
+- ✅ Versus terminal flow (first-to-5 kills)
+- ✅ All lifecycle bugs fixed (pool, events, worldWidth)
+
+**Remaining caveats for production:**
+- Audio assets are placeholders (silent `.wav` files) — need real content
+- Test coverage is minimal (3 files, 6 tests) — needs expansion
+- VERSUS-016 (bullet range on wide screens) still open
+- VERSUS-002 (touch zones on small Android) needs live validation
+
 ## Pre-Launch Readiness Assessment (Post Phase 7)
 
 > **Status as of 2026-02-16 11:22:** All PLAYTEST issues fixed. All 27 original bugs resolved. All 17 AUDIT findings from Round 2 resolved. All XPHASE items resolved. Settings UI added. GameOver timeSeconds wired. Entity zero-size fixed. CollisionSystem onGround fixed. Physics clamp unified. Audio/system/scene/entity/UI helper duplication all extracted to shared modules. **Only remaining TBDs:** no audio assets (content gap), RUNTIME-001/002/004/005/006 (need live testing), constants.js thinness, Input.js touch-vs-Joystick future concern.

@@ -1,11 +1,17 @@
 const DEFAULT_FALLBACK_COLOR = "#000";
+const DEFAULT_MAX_IMAGE_CACHE_ENTRIES = 32;
 
 export class Background {
-  constructor(layers = [], fallbackColor = DEFAULT_FALLBACK_COLOR) {
+  constructor(
+    layers = [],
+    fallbackColor = DEFAULT_FALLBACK_COLOR,
+    maxImageCacheEntries = DEFAULT_MAX_IMAGE_CACHE_ENTRIES
+  ) {
     this.fallbackColor =
       typeof fallbackColor === "string" ? fallbackColor : DEFAULT_FALLBACK_COLOR;
     this.layers = [];
     this._imageCache = new Map();
+    this._maxImageCacheEntries = this.#resolveCacheLimit(maxImageCacheEntries);
     this.setLayers(layers);
   }
 
@@ -119,14 +125,28 @@ export class Background {
 
   #getCachedImage(imageSrc) {
     if (this._imageCache.has(imageSrc)) {
-      return this._imageCache.get(imageSrc);
+      const image = this._imageCache.get(imageSrc);
+      this._imageCache.delete(imageSrc);
+      this._imageCache.set(imageSrc, image);
+      return image;
     }
 
     const image = new Image();
     image.decoding = "async";
     image.src = imageSrc;
     this._imageCache.set(imageSrc, image);
+    this.#trimImageCache();
     return image;
+  }
+
+  #trimImageCache() {
+    while (this._imageCache.size > this._maxImageCacheEntries) {
+      const oldestKey = this._imageCache.keys().next().value;
+      if (typeof oldestKey === "undefined") {
+        break;
+      }
+      this._imageCache.delete(oldestKey);
+    }
   }
 
   #isImageLike(value) {
@@ -175,5 +195,14 @@ export class Background {
 
   #clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
+  }
+
+  #resolveCacheLimit(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return DEFAULT_MAX_IMAGE_CACHE_ENTRIES;
+    }
+
+    return Math.max(1, Math.floor(numeric));
   }
 }
