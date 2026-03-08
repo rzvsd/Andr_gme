@@ -19,6 +19,8 @@ export class Game {
 
     this.canvas = canvas;
     this.ctx = context;
+    this.ctx.imageSmoothingEnabled = true;
+    this.canvas.style.imageRendering = "auto";
 
     this.running = false;
     this.rafId = null;
@@ -40,6 +42,7 @@ export class Game {
     this.currentSceneName = null;
     this.currentScene = null;
     this.sceneData = {};
+    this.debugOverlayVisible = false;
 
     this.loop = this.loop.bind(this);
     this.handleResize = this.handleResize.bind(this);
@@ -47,6 +50,7 @@ export class Game {
     this.handlePointerMove = this.handlePointerMove.bind(this);
     this.handlePointerUp = this.handlePointerUp.bind(this);
     this.handlePointerCancel = this.handlePointerCancel.bind(this);
+    this.handleDebugToggle = this.handleDebugToggle.bind(this);
   }
 
   registerScene(name, scene) {
@@ -115,6 +119,7 @@ export class Game {
     this.input.attach();
     this.handleResize();
     window.addEventListener("resize", this.handleResize);
+    window.addEventListener("keydown", this.handleDebugToggle);
     this.canvas.addEventListener("pointerdown", this.handlePointerDown, { passive: false });
     this.canvas.addEventListener("pointermove", this.handlePointerMove, { passive: false });
     this.canvas.addEventListener("pointerup", this.handlePointerUp, { passive: false });
@@ -132,6 +137,7 @@ export class Game {
     this.running = false;
     this.input.detach();
     window.removeEventListener("resize", this.handleResize);
+    window.removeEventListener("keydown", this.handleDebugToggle);
     this.canvas.removeEventListener("pointerdown", this.handlePointerDown);
     this.canvas.removeEventListener("pointermove", this.handlePointerMove);
     this.canvas.removeEventListener("pointerup", this.handlePointerUp);
@@ -158,6 +164,10 @@ export class Game {
     this.canvas.height = Math.max(1, Math.round(this.viewHeight * this.dpr));
 
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.ctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in this.ctx) {
+      this.ctx.imageSmoothingQuality = "high";
+    }
     this.camera.setViewport(this.viewWidth, this.viewHeight);
 
     if (this.currentScene && typeof this.currentScene.onResize === "function") {
@@ -241,12 +251,70 @@ export class Game {
   }
 
   render(interpolationAlpha) {
+    this.ctx.imageSmoothingEnabled = true;
     this.ctx.fillStyle = CANVAS_BACKGROUND_COLOR;
     this.ctx.fillRect(0, 0, this.viewWidth, this.viewHeight);
 
     if (this.currentScene && typeof this.currentScene.render === "function") {
       this.currentScene.render(this.ctx, interpolationAlpha, this);
     }
+
+    if (this.debugOverlayVisible) {
+      this.renderDebugOverlay();
+    }
+  }
+
+  handleDebugToggle(event) {
+    if (event?.code !== "F1") {
+      return;
+    }
+
+    this.debugOverlayVisible = !this.debugOverlayVisible;
+    if (event.cancelable) {
+      event.preventDefault();
+    }
+  }
+
+  renderDebugOverlay() {
+    if (this.currentScene && typeof this.currentScene.renderDebugOverlay === "function") {
+      this.currentScene.renderDebugOverlay(this.ctx, this);
+    }
+
+    const lines = [
+      `Scene: ${this.currentSceneName ?? "unknown"}`,
+      `View: ${this.viewWidth}x${this.viewHeight} dpr=${this.dpr.toFixed(2)}`,
+      `Camera x=${Number(this.camera.x).toFixed(2)} y=${Number(this.camera.y).toFixed(2)}`,
+      `Camera raw x=${Number(this.camera.rawX ?? this.camera.x).toFixed(2)} y=${Number(this.camera.rawY ?? this.camera.y).toFixed(2)}`,
+    ];
+
+    if (this.currentScene && typeof this.currentScene.getDebugLines === "function") {
+      const sceneLines = this.currentScene.getDebugLines(this);
+      if (Array.isArray(sceneLines)) {
+        lines.push(...sceneLines.filter((line) => typeof line === "string" && line.length > 0));
+      }
+    }
+
+    const padding = 10;
+    const lineHeight = 18;
+    const boxWidth = 460;
+    const boxHeight = padding * 2 + lines.length * lineHeight;
+
+    this.ctx.save();
+    this.ctx.fillStyle = "rgba(7, 12, 18, 0.82)";
+    this.ctx.fillRect(12, 12, boxWidth, boxHeight);
+    this.ctx.strokeStyle = "rgba(208, 230, 255, 0.32)";
+    this.ctx.lineWidth = 1;
+    this.ctx.strokeRect(12, 12, boxWidth, boxHeight);
+    this.ctx.fillStyle = "#e8f3ff";
+    this.ctx.font = "12px monospace";
+    this.ctx.textAlign = "left";
+    this.ctx.textBaseline = "top";
+
+    for (let index = 0; index < lines.length; index += 1) {
+      this.ctx.fillText(lines[index], 12 + padding, 12 + padding + index * lineHeight);
+    }
+
+    this.ctx.restore();
   }
 
   handlePointerDown(event) {

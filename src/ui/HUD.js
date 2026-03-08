@@ -18,20 +18,20 @@ const DEFAULT_STYLE = {
   panelPaddingTop: 12,
   panelPaddingBottom: 10,
   panelRadius: 12,
-  panelFill: "rgba(10, 16, 30, 0.74)",
-  panelStroke: "rgba(140, 166, 210, 0.65)",
-  labelColor: "#d4deef",
-  valueColor: "#f3f8ff",
+  panelFill: "rgba(20, 30, 20, 0.78)",
+  panelStroke: "rgba(181, 205, 117, 0.62)",
+  labelColor: "#dce9c0",
+  valueColor: "#fff8ea",
   font: "600 15px Arial",
   healthBarWidth: 220,
   healthBarHeight: 14,
   healthBarOffsetY: 18,
   healthBarRadius: 7,
-  healthBarLabelColor: "#d4deef",
-  healthBarFillColor: "#36d37e",
-  healthBarBackColor: "rgba(13, 28, 50, 0.9)",
-  healthBarStrokeColor: "rgba(157, 191, 255, 0.65)",
-  healthBarCriticalColor: "#f97373"
+  healthBarLabelColor: "#eef4d1",
+  healthBarFillColor: "#9fd252",
+  healthBarBackColor: "rgba(18, 33, 18, 0.9)",
+  healthBarStrokeColor: "rgba(180, 208, 117, 0.65)",
+  healthBarCriticalColor: "#f27362"
 };
 
 export class HUD {
@@ -66,9 +66,9 @@ export class HUD {
 
     const activeState = scoreState && typeof scoreState === "object" ? scoreState : this.state;
     const leftLines = [
-      { label: "Dodged", value: pickNumber(activeState, ["dodges", "dodged", "bulletsDodged"]) },
-      { label: "Deaths", value: pickNumber(activeState, ["deaths"]) },
-      { label: "Kills", value: pickNumber(activeState, ["kills"]) }
+      { label: "Dodges", value: pickNumber(activeState, ["dodges", "dodged", "bulletsDodged"]) },
+      { label: "Splats", value: pickNumber(activeState, ["deaths"]) },
+      { label: "Squeezed", value: pickNumber(activeState, ["kills"]) }
     ];
     const rightLines = [
       { label: "Wave", value: pickNumber(activeState, ["wave", "currentWave"]) },
@@ -178,7 +178,7 @@ export class HUD {
       ctx.font = "600 13px Arial";
       ctx.fillStyle = this.style.healthBarLabelColor;
       ctx.textAlign = "left";
-      ctx.fillText("HP", x, labelY);
+      ctx.fillText("JUICE", x, labelY);
       ctx.textAlign = "right";
       ctx.fillText(`${Math.round(hp)}/${Math.round(maxHp)}`, x + width, labelY);
     }

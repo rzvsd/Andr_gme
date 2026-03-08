@@ -101,6 +101,7 @@ export class Enemy extends Entity {
     this.state = 'idle';
     this.color = '#ffffff';
     this.moveIntent = 0;
+    this.facing = 1;
 
     this.configure(type, position);
   }
@@ -125,6 +126,7 @@ export class Enemy extends Entity {
     this.vx = 0;
     this.vy = 0;
     this.moveIntent = 0;
+    this.facing = 1;
     this.active = true;
 
     return this;
@@ -177,6 +179,10 @@ export class Enemy extends Entity {
     }
 
     void deltaSeconds;
+
+    if (Math.abs(this.vx) > Number.EPSILON) {
+      this.facing = this.vx < 0 ? -1 : 1;
+    }
 
     if (Math.abs(this.vy) > Number.EPSILON) {
       this.state = this.vy < 0 ? 'jumping' : 'falling';

@@ -1,6 +1,35 @@
 import { Physics } from '../core/Physics.js';
+import {
+  VERSUS_LEFT_PLATFORM_CATEGORY,
+  VERSUS_LEFT_PLATFORM_ID,
+  VERSUS_LEFT_PLATFORM_NAME,
+  VERSUS_PLATFORM_TOP_COLLISION_HEIGHT,
+  VERSUS_PLAYER_A_PLATFORM_MASK,
+  VERSUS_PLAYER_B_PLATFORM_MASK,
+  VERSUS_RIGHT_PLATFORM_CATEGORY,
+  VERSUS_RIGHT_PLATFORM_ID,
+  VERSUS_RIGHT_PLATFORM_NAME,
+} from '../scenes/versusArena.js';
 import { emitEvent, isActiveEntity, isFiniteNumber } from './systemUtils.js';
 import { parseVersusPlayerIndex, VERSUS_INVALID_PLAYER_INDEX } from './versusPlayerIndex.js';
+
+const PLATFORM_CONTACT_EPSILON = 0.0001;
+const PLATFORM_DEFAULTS = [
+  {
+    id: VERSUS_LEFT_PLATFORM_ID,
+    name: VERSUS_LEFT_PLATFORM_NAME,
+    collisionCategory: VERSUS_LEFT_PLATFORM_CATEGORY,
+  },
+  {
+    id: VERSUS_RIGHT_PLATFORM_ID,
+    name: VERSUS_RIGHT_PLATFORM_NAME,
+    collisionCategory: VERSUS_RIGHT_PLATFORM_CATEGORY,
+  },
+];
+const PLAYER_PLATFORM_MASKS = [
+  VERSUS_PLAYER_A_PLATFORM_MASK,
+  VERSUS_PLAYER_B_PLATFORM_MASK,
+];
 
 const hasBounds = (entity) => (
   entity &&
@@ -37,24 +66,69 @@ const centerOf = (entity) => ({
   y: Number(entity.y) + Number(entity.height) * 0.5,
 });
 
-const getOverlap = (entity, platform) => {
-  const entityCenterX = Number(entity.x) + Number(entity.width) / 2;
-  const entityCenterY = Number(entity.y) + Number(entity.height) / 2;
-  const platformCenterX = Number(platform.x) + Number(platform.width) / 2;
-  const platformCenterY = Number(platform.y) + Number(platform.height) / 2;
+const toNonNegativeNumber = (value, fallback = 0) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  return Math.max(0, numeric);
+};
 
-  const halfCombinedWidth = Number(entity.width) / 2 + Number(platform.width) / 2;
-  const halfCombinedHeight = Number(entity.height) / 2 + Number(platform.height) / 2;
+const toBitmask = (value, fallback = 0) => {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric < 0) {
+    return fallback;
+  }
+  return numeric;
+};
 
-  const deltaX = entityCenterX - platformCenterX;
-  const deltaY = entityCenterY - platformCenterY;
+const getBodyBounds = (platform) => {
+  if (platform && typeof platform.getBodyBounds === 'function') {
+    return platform.getBodyBounds();
+  }
+  return platform;
+};
+
+const getPlayerCollisionBounds = (platform) => {
+  if (platform && typeof platform.getPlayerCollisionBounds === 'function') {
+    return platform.getPlayerCollisionBounds();
+  }
+
+  const offsetY = toNonNegativeNumber(platform?.playerCollisionOffsetY, 0);
+  const bodyHeight = toNonNegativeNumber(platform?.height, 0);
+  const maxCollisionHeight = Math.max(0, bodyHeight - offsetY);
+  const collisionHeight = Math.min(
+    maxCollisionHeight,
+    toNonNegativeNumber(platform?.playerCollisionHeight, maxCollisionHeight)
+  );
 
   return {
-    deltaX,
-    deltaY,
-    overlapX: halfCombinedWidth - Math.abs(deltaX),
-    overlapY: halfCombinedHeight - Math.abs(deltaY),
+    x: Number(platform?.x) || 0,
+    y: (Number(platform?.y) || 0) + offsetY,
+    width: Number(platform?.width) || 0,
+    height: collisionHeight,
   };
+};
+
+const assignPlayerSupportMetadata = (player, platform) => {
+  if (!player || typeof player !== 'object') {
+    return;
+  }
+
+  if (!platform) {
+    player.supportingPlatform = null;
+    player.supportingPlatformId = null;
+    player.supportingPlatformName = null;
+    player.supportingPlatformCategory = 0;
+    return;
+  }
+
+  player.supportingPlatform = platform;
+  player.supportingPlatformId = typeof platform.id === 'string' && platform.id.length > 0 ? platform.id : null;
+  player.supportingPlatformName = typeof platform.name === 'string' && platform.name.length > 0
+    ? platform.name
+    : player.supportingPlatformId;
+  player.supportingPlatformCategory = toBitmask(platform.collisionCategory, 0);
 };
 
 export class VersusCollisionSystem {
@@ -68,8 +142,10 @@ export class VersusCollisionSystem {
     const platforms = Array.isArray(context?.platforms) ? context.platforms : [];
     const eventBus = context?.eventBus;
 
+    this.#preparePlatforms(platforms);
+    this.#preparePlayers(players);
     this.#resolvePlayersAgainstPlatforms(players, platforms);
-    this.#resolvePvpBulletCollisions(players, bullets, eventBus);
+    this.#resolvePvpBulletCollisions(players, bullets, platforms, eventBus);
   }
 
   #resolvePlayers(context) {
@@ -81,51 +157,102 @@ export class VersusCollisionSystem {
     return this._players;
   }
 
+  #preparePlatforms(platforms) {
+    const sortedPlatforms = platforms
+      .filter((platform) => platform && typeof platform === 'object')
+      .slice()
+      .sort((a, b) => toNonNegativeNumber(a?.x, 0) - toNonNegativeNumber(b?.x, 0));
+
+    for (let index = 0; index < sortedPlatforms.length; index += 1) {
+      const platform = sortedPlatforms[index];
+      const defaults = PLATFORM_DEFAULTS[index];
+      if (!defaults) {
+        continue;
+      }
+
+      const hadPlatformId = typeof platform.id === 'string' && platform.id.length > 0;
+      const hadPlatformName = typeof platform.name === 'string' && platform.name.length > 0;
+      const existingCategory = toBitmask(platform.collisionCategory, 0);
+      const hadVersusMetadata = hadPlatformId || hadPlatformName || existingCategory > 0;
+
+      if (!hadPlatformId) {
+        platform.id = defaults.id;
+      }
+      if (!hadPlatformName) {
+        platform.name = defaults.name;
+      }
+
+      platform.collisionCategory = existingCategory > 0 ? existingCategory : defaults.collisionCategory;
+      platform.playerCollisionOffsetY = toNonNegativeNumber(platform.playerCollisionOffsetY, 0);
+
+      const bodyHeight = toNonNegativeNumber(platform.height, 0);
+      const maxCollisionHeight = Math.max(0, bodyHeight - platform.playerCollisionOffsetY);
+      const defaultCollisionHeight = Math.min(VERSUS_PLATFORM_TOP_COLLISION_HEIGHT, maxCollisionHeight);
+      const explicitCollisionHeight = toNonNegativeNumber(platform.playerCollisionHeight, maxCollisionHeight);
+      platform.playerCollisionHeight = Math.min(
+        maxCollisionHeight,
+        hadVersusMetadata ? explicitCollisionHeight : defaultCollisionHeight
+      );
+    }
+  }
+
+  #preparePlayers(players) {
+    for (let index = 0; index < players.length; index += 1) {
+      const player = players[index];
+      if (!player || typeof player !== 'object') {
+        continue;
+      }
+
+      const fallbackMask = PLAYER_PLATFORM_MASKS[index] ?? 0;
+      player.platformCollisionMask = toBitmask(player.platformCollisionMask, fallbackMask);
+    }
+  }
+
   #resolvePlayersAgainstPlatforms(players, platforms) {
     for (const player of players) {
+      if (!player || typeof player !== 'object') {
+        continue;
+      }
+
       if (!isActiveEntity(player) || !hasBounds(player)) {
+        assignPlayerSupportMetadata(player, null);
         continue;
       }
 
       let grounded = false;
+      let supportingPlatform = null;
 
       for (const platform of platforms) {
         if (!isActiveEntity(platform) || !hasBounds(platform)) {
           continue;
         }
-
-        if (!Physics.aabbOverlap(player, platform)) {
+        if (platform.isSolid === false) {
+          continue;
+        }
+        if (!this.#canPlayerCollideWithPlatform(player, platform)) {
           continue;
         }
 
-        const { deltaX, deltaY, overlapX, overlapY } = getOverlap(player, platform);
-        if (!(overlapX > 0) || !(overlapY > 0)) {
+        const collisionBounds = getPlayerCollisionBounds(platform);
+        if (!hasBounds(collisionBounds)) {
           continue;
         }
 
-        if (overlapX < overlapY) {
-          player.x += deltaX < 0 ? -overlapX : overlapX;
-          if (isFiniteNumber(player.vx)) {
-            player.vx = 0;
-          }
+        if (!this.#resolvePlayerOnSupportStrip(player, collisionBounds)) {
           continue;
         }
 
-        player.y += deltaY < 0 ? -overlapY : overlapY;
-        if (isFiniteNumber(player.vy)) {
-          player.vy = 0;
-        }
-
-        if (deltaY < 0) {
-          grounded = true;
-        }
+        grounded = true;
+        supportingPlatform = platform;
+        break;
       }
 
       player.onGround = grounded;
+      assignPlayerSupportMetadata(player, supportingPlatform);
     }
   }
 
-  #resolvePvpBulletCollisions(players, bullets, eventBus) {
+  #resolvePvpBulletCollisions(players, bullets, platforms, eventBus) {
     for (const bullet of bullets) {
       if (!isActiveEntity(bullet) || !hasBounds(bullet)) {
         continue;
@@ -140,11 +267,7 @@ export class VersusCollisionSystem {
       const shooter = players[shooterIndex];
       const target = players[targetIndex];
 
-      if (!isActiveEntity(target) || !hasBounds(target)) {
-        continue;
-      }
-
-      if (Physics.aabbOverlap(bullet, target)) {
+      if (isActiveEntity(target) && hasBounds(target) && Physics.aabbOverlap(bullet, target)) {
         const damage = isFiniteNumber(bullet.damage) ? Math.max(0, Number(bullet.damage)) : 0;
         const targetHealthBefore = isFiniteNumber(target.health) ? Number(target.health) : null;
         const targetWasActive = target.active !== false;
@@ -201,8 +324,40 @@ export class VersusCollisionSystem {
         continue;
       }
 
+      if (this.#deactivateBulletOnPlatformHit(bullet, platforms, eventBus, shooter, shooterIndex)) {
+        continue;
+      }
+
       this.#emitDodgeIfNeeded(bullet, shooter, shooterIndex, target, targetIndex, eventBus);
     }
+  }
+
+  #deactivateBulletOnPlatformHit(bullet, platforms, eventBus, shooter, shooterIndex) {
+    for (const platform of platforms) {
+      if (!isActiveEntity(platform)) {
+        continue;
+      }
+
+      const bodyBounds = getBodyBounds(platform);
+      if (!hasBounds(bodyBounds)) {
+        continue;
+      }
+
+      if (!Physics.aabbOverlap(bullet, bodyBounds)) {
+        continue;
+      }
+
+      deactivateEntity(bullet);
+      emitEvent(eventBus, 'versus:bullet_blocked', {
+        bullet,
+        shooter,
+        shooterIndex,
+        platform,
+      });
+      return true;
+    }
+
+    return false;
   }
 
   #emitDodgeIfNeeded(bullet, shooter, shooterIndex, target, targetIndex, eventBus) {
@@ -237,5 +392,49 @@ export class VersusCollisionSystem {
       dodger: target,
       dodgerIndex: targetIndex,
     });
+  }
+
+  #canPlayerCollideWithPlatform(player, platform) {
+    const platformCategory = toBitmask(platform?.collisionCategory, 0);
+    if (platformCategory === 0) {
+      return true;
+    }
+
+    const playerMask = toBitmask(player?.platformCollisionMask, 0);
+    return (playerMask & platformCategory) !== 0;
+  }
+
+  #resolvePlayerOnSupportStrip(player, platformBounds) {
+    const playerLeft = Number(player.x);
+    const playerTop = Number(player.y);
+    const playerRight = playerLeft + Number(player.width);
+    const playerBottom = playerTop + Number(player.height);
+
+    const platformLeft = Number(platformBounds.x);
+    const platformTop = Number(platformBounds.y);
+    const platformRight = platformLeft + Number(platformBounds.width);
+    const platformBottom = platformTop + Number(platformBounds.height);
+
+    const hasHorizontalOverlap = playerRight > platformLeft && playerLeft < platformRight;
+    if (!hasHorizontalOverlap) {
+      return false;
+    }
+
+    const verticalVelocity = isFiniteNumber(player.vy) ? Number(player.vy) : 0;
+    if (verticalVelocity < 0) {
+      return false;
+    }
+
+    const isTouchingTop = Math.abs(playerBottom - platformTop) <= PLATFORM_CONTACT_EPSILON;
+    const overlapsSupportStrip = playerBottom > platformTop && playerTop < platformBottom;
+    if (!isTouchingTop && !overlapsSupportStrip) {
+      return false;
+    }
+
+    player.y = platformTop - Number(player.height);
+    if (isFiniteNumber(player.vy) && Number(player.vy) > 0) {
+      player.vy = 0;
+    }
+    return true;
   }
 }

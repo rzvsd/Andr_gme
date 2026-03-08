@@ -4,6 +4,9 @@ export class Camera {
     this.viewportHeight = 1;
     this.x = 0;
     this.y = 0;
+    this.rawX = 0;
+    this.rawY = 0;
+    this.roundPixels = true;
     this.target = null;
     this.lerpFactor = 0.1;
 
@@ -27,8 +30,17 @@ export class Camera {
     }
   }
 
+  setPosition(x, y) {
+    const nextX = Number(x);
+    const nextY = Number(y);
+    this.rawX = Number.isFinite(nextX) ? nextX : this.rawX;
+    this.rawY = Number.isFinite(nextY) ? nextY : this.rawY;
+    this.#applyPixelSnap();
+  }
+
   update() {
     if (!this.target) {
+      this.#applyPixelSnap();
       return;
     }
 
@@ -38,14 +50,17 @@ export class Camera {
     const targetX = this.target.x + width / 2 - this.viewportWidth / 2;
     const targetY = this.target.y + height / 2 - this.viewportHeight / 2;
 
-    this.x += (targetX - this.x) * this.lerpFactor;
-    this.y += (targetY - this.y) * this.lerpFactor;
+    this.rawX += (targetX - this.rawX) * this.lerpFactor;
+    this.rawY += (targetY - this.rawY) * this.lerpFactor;
+    this.#applyPixelSnap();
   }
 
   worldToScreen(x, y, outPoint) {
     const point = outPoint && typeof outPoint === "object" ? outPoint : {};
-    point.x = Number(x) - this.x;
-    point.y = Number(y) - this.y;
+    const screenX = Number(x) - this.x;
+    const screenY = Number(y) - this.y;
+    point.x = this.roundPixels ? Math.round(screenX) : screenX;
+    point.y = this.roundPixels ? Math.round(screenY) : screenY;
     return point;
   }
 
@@ -64,5 +79,10 @@ export class Camera {
 
     const fallback = Number(this.target?.[fallbackKey]);
     return Number.isFinite(fallback) ? fallback : 0;
+  }
+
+  #applyPixelSnap() {
+    this.x = this.roundPixels ? Math.round(this.rawX) : this.rawX;
+    this.y = this.roundPixels ? Math.round(this.rawY) : this.rawY;
   }
 }

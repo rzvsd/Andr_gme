@@ -55,14 +55,14 @@ export class Background {
         continue;
       }
 
-      const drawHeight = layer.height > 0 ? layer.height : sourceHeight;
-      const drawWidth = (sourceWidth * drawHeight) / sourceHeight;
+      const drawHeight = Math.round(layer.height > 0 ? layer.height : sourceHeight);
+      const drawWidth = Math.round((sourceWidth * drawHeight) / sourceHeight);
       if (!Number.isFinite(drawWidth) || drawWidth <= 0 || drawHeight <= 0) {
         continue;
       }
 
-      const baseX = -cameraX * layer.parallaxX;
-      const baseY = layer.y - cameraY * layer.parallaxY;
+      const baseX = Math.round(-cameraX * layer.parallaxX);
+      const baseY = Math.round(layer.y - cameraY * layer.parallaxY);
 
       ctx.save();
       ctx.globalAlpha *= layer.opacity;

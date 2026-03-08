@@ -1,5 +1,17 @@
-import * as ButtonModule from "../ui/Button.js";
+﻿import * as ButtonModule from "../ui/Button.js";
 import { loadSettings, saveSettings } from "../config/settings.js";
+import { SpriteSheet } from "../rendering/SpriteSheet.js";
+import {
+  buildPlayerCharacterSheetDataUrl,
+  cyclePlayerCharacterKey,
+  getPlayerCharacterByKey,
+  getPlayerCharacterByIndex,
+  getPlayerCharacterIndexByKey,
+  loadSelectedPlayerCharacterKey,
+  PLAYER_CHARACTER_FRAME_SIZE,
+  PLAYER_CHARACTER_ROSTER,
+  saveSelectedPlayerCharacterKey,
+} from "../theme/playerRoster.js";
 import {
   asNumber,
   asPointer,
@@ -10,6 +22,20 @@ import {
 } from "./scenePointerUtils.js";
 
 const ButtonClass = ButtonModule.Button;
+const PREVIEW_FRAME_SEQUENCE = Object.freeze([0, 1, 2, 1, 3, 1]);
+const CARD_COLUMNS = 3;
+const CARD_ROWS = 2;
+
+function resolveIntegerSpriteSize(availableSize, maxScale = 3) {
+  const limit = Math.max(PLAYER_CHARACTER_FRAME_SIZE, Math.floor(Number(availableSize) || PLAYER_CHARACTER_FRAME_SIZE));
+  for (let scale = maxScale; scale >= 1; scale -= 1) {
+    const candidate = PLAYER_CHARACTER_FRAME_SIZE * scale;
+    if (candidate <= limit) {
+      return candidate;
+    }
+  }
+  return PLAYER_CHARACTER_FRAME_SIZE;
+}
 
 export class MenuScene {
   constructor() {
@@ -18,16 +44,60 @@ export class MenuScene {
     this.playButton = null;
     this.soundButton = null;
     this.musicButton = null;
+    this.prevButton = null;
+    this.nextButton = null;
+    this.characterButtons = [];
     this.buttons = [];
     this.activePointerId = null;
     this.activeButton = null;
     this.settings = loadSettings();
+    this.previewRect = { x: 0, y: 0, width: 0, height: 0 };
+    this.selectedCharacterKey = loadSelectedPlayerCharacterKey();
+    this.previewSheets = new Map();
+    this.previewLoadPromise = null;
+    this.previewTime = 0;
+    this.keyBound = false;
+    this.activeGame = null;
+    this.onKeyDown = (event) => {
+      const code = event?.code;
+      if (code === "ArrowLeft" || code === "KeyA") {
+        this.shiftSelection(-1);
+      } else if (code === "ArrowRight" || code === "KeyD") {
+        this.shiftSelection(1);
+      } else if (code === "Enter" || code === "Space") {
+        this.startSelectedCharacter(this.activeGame);
+      } else if (/^Digit[1-6]$/.test(code || "")) {
+        const index = Number(code.slice(-1)) - 1;
+        const character = getPlayerCharacterByIndex(index);
+        this.setSelectedCharacter(character?.key);
+      } else {
+        return;
+      }
+
+      if (event?.cancelable) {
+        event.preventDefault();
+      }
+    };
   }
 
   onEnter(game, transition) {
+    this.activeGame = game;
     this.settings = loadSettings();
-    this.playButton = this.createButton("Play", () => {
-      game.switchScene("versus", { restart: true });
+    const payload = transition?.payload ?? transition ?? {};
+    this.selectedCharacterKey = getPlayerCharacterByKey(
+      payload?.playerCharacterKey ?? game?.sceneData?.playerCharacterKey ?? loadSelectedPlayerCharacterKey()
+    ).key;
+
+    this.playButton = this.createButton("Start", () => {
+      this.startSelectedCharacter(game);
+    });
+    this.prevButton = this.createButton("<", () => {
+      this.shiftSelection(-1);
+      game.eventBus?.emit?.("ui_click", { source: "character_prev" });
+    });
+    this.nextButton = this.createButton(">", () => {
+      this.shiftSelection(1);
+      game.eventBus?.emit?.("ui_click", { source: "character_next" });
     });
     this.soundButton = this.createButton("", () => {
       this.settings = saveSettings({
@@ -45,36 +115,110 @@ export class MenuScene {
       this.syncSettingsButtons();
       game.eventBus?.emit?.("ui_click", { source: "toggle_music" });
     });
+    this.characterButtons = PLAYER_CHARACTER_ROSTER.map((character) => {
+      const button = this.createButton(character.name, () => {
+        this.setSelectedCharacter(character.key);
+        game.eventBus?.emit?.("ui_click", {
+          source: "character_select",
+          key: character.key,
+        });
+      });
+      button.characterKey = character.key;
+      return button;
+    });
+
     this.syncSettingsButtons();
-    this.buttons = [this.playButton, this.soundButton, this.musicButton];
+    this.buttons = [
+      ...this.characterButtons,
+      this.playButton,
+      this.prevButton,
+      this.nextButton,
+      this.soundButton,
+      this.musicButton,
+    ];
     this.activePointerId = null;
     this.activeButton = null;
+    this.previewTime = 0;
+    this.ensurePreviewSheets();
     this.onResize(
       asNumber(game?.viewWidth, this.width),
       asNumber(game?.viewHeight, this.height),
       game,
     );
-  }
 
-  onExit(game, transition) {
-    this.activePointerId = null;
-    this.activeButton = null;
-    for (const button of this.buttons) {
-      this.setPressed(button, false);
+    if (!this.keyBound && typeof window !== "undefined") {
+      window.addEventListener("keydown", this.onKeyDown);
+      this.keyBound = true;
     }
   }
 
-  onResize(width, height, game) {
+  onExit() {
+    this.activePointerId = null;
+    this.activeButton = null;
+    this.activeGame = null;
+    for (const button of this.buttons) {
+      this.setPressed(button, false);
+    }
+    if (this.keyBound && typeof window !== "undefined") {
+      window.removeEventListener("keydown", this.onKeyDown);
+      this.keyBound = false;
+    }
+  }
+
+  onResize(width, height) {
     this.width = Math.max(1, asNumber(width, 1));
     this.height = Math.max(1, asNumber(height, 1));
 
-    const buttonWidth = Math.min(280, Math.max(180, this.width * 0.28));
-    const buttonHeight = Math.min(72, Math.max(54, this.height * 0.085));
+    const sideInset = Math.max(18, this.width * 0.04);
+    const previewWidth = Math.min(420, Math.max(260, this.width * 0.42));
+    const previewHeight = Math.min(240, Math.max(176, this.height * 0.27));
+    const previewX = (this.width - previewWidth) * 0.5;
+    const previewY = Math.max(92, this.height * 0.16);
+    const arrowSize = Math.min(64, Math.max(44, previewHeight * 0.26));
+    const arrowY = previewY + (previewHeight - arrowSize) * 0.5;
+
+    this.previewRect = {
+      x: Math.round(previewX),
+      y: Math.round(previewY),
+      width: Math.round(previewWidth),
+      height: Math.round(previewHeight),
+    };
+
+    this.setButtonRect(this.prevButton, previewX + 14, arrowY, arrowSize, arrowSize);
+    this.setButtonRect(this.nextButton, previewX + previewWidth - arrowSize - 14, arrowY, arrowSize, arrowSize);
+
+    const cardGap = Math.max(10, this.width * 0.012);
+    const columns = CARD_COLUMNS;
+    const rows = CARD_ROWS;
+    const cardWidth = Math.round(Math.min(
+      156,
+      Math.max(88, (this.width - sideInset * 2 - cardGap * (columns - 1)) / columns),
+    ));
+    const cardHeight = Math.round(Math.min(112, Math.max(84, this.height * 0.12)));
+    const gridWidth = Math.round(columns * cardWidth + (columns - 1) * cardGap);
+    const gridHeight = Math.round(rows * cardHeight + (rows - 1) * cardGap);
+    const gridX = Math.round((this.width - gridWidth) * 0.5);
+    const gridY = Math.round(previewY + previewHeight + Math.max(22, this.height * 0.028));
+
+    for (let index = 0; index < this.characterButtons.length; index += 1) {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      this.setButtonRect(
+        this.characterButtons[index],
+        gridX + column * (cardWidth + cardGap),
+        gridY + row * (cardHeight + cardGap),
+        cardWidth,
+        cardHeight,
+      );
+    }
+
+    const buttonWidth = Math.min(280, Math.max(190, this.width * 0.28));
+    const buttonHeight = Math.min(64, Math.max(50, this.height * 0.074));
     const buttonX = (this.width - buttonWidth) * 0.5;
-    const buttonY = this.height * 0.58;
+    const buttonY = gridY + gridHeight + Math.max(18, this.height * 0.026);
     const settingsWidth = Math.min(220, Math.max(150, this.width * 0.22));
-    const settingsHeight = Math.min(56, Math.max(44, this.height * 0.064));
-    const settingsY = buttonY + buttonHeight + Math.max(14, this.height * 0.025);
+    const settingsHeight = Math.min(54, Math.max(42, this.height * 0.058));
+    const settingsY = buttonY + buttonHeight + Math.max(12, this.height * 0.02);
     const settingsGap = Math.max(12, this.width * 0.02);
 
     this.setButtonRect(this.playButton, buttonX, buttonY, buttonWidth, buttonHeight);
@@ -97,35 +241,155 @@ export class MenuScene {
   }
 
   update(dt, game) {
+    this.previewTime += Math.max(0, Number(dt) || 0);
     for (const button of this.buttons) {
       callAny(button, ["update"], [[dt, game], [dt], []]);
     }
   }
 
-  render(ctx, alpha, game) {
+  render(ctx) {
     ctx.save();
 
     const gradient = ctx.createLinearGradient(0, 0, 0, this.height);
-    gradient.addColorStop(0, "#17233b");
-    gradient.addColorStop(1, "#0a111f");
+    gradient.addColorStop(0, "#13263f");
+    gradient.addColorStop(0.58, "#10243a");
+    gradient.addColorStop(1, "#08131f");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, this.width, this.height);
 
-    ctx.fillStyle = "#f5f7ff";
+    const glow = ctx.createRadialGradient(this.width * 0.5, this.height * 0.26, 20, this.width * 0.5, this.height * 0.26, this.width * 0.4);
+    glow.addColorStop(0, "rgba(222, 244, 180, 0.16)");
+    glow.addColorStop(1, "rgba(222, 244, 180, 0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, this.width, this.height);
+
+    ctx.fillStyle = "#f8fbff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = "700 56px Arial";
-    ctx.fillText("BULLET DODGE ARENA", this.width * 0.5, this.height * 0.34);
+    ctx.font = "700 54px Arial";
+    ctx.fillText("FRUIT SOLDIER SELECT", this.width * 0.5, Math.max(48, this.height * 0.09));
 
     ctx.font = "400 20px Arial";
-    ctx.fillStyle = "#b9c4e8";
-    ctx.fillText("Phase 7", this.width * 0.5, this.height * 0.42);
+    ctx.fillStyle = "#b9cbe8";
+    ctx.fillText("Pick your commando before deployment", this.width * 0.5, Math.max(84, this.height * 0.135));
 
-    for (const button of this.buttons) {
-      this.renderButton(ctx, button);
-    }
+    this.renderPreviewPanel(ctx);
+    this.renderRosterCards(ctx);
+
+    this.renderButton(ctx, this.prevButton);
+    this.renderButton(ctx, this.nextButton);
+    this.renderButton(ctx, this.playButton);
+    this.renderButton(ctx, this.soundButton);
+    this.renderButton(ctx, this.musicButton);
 
     ctx.restore();
+  }
+
+  renderPreviewPanel(ctx) {
+    const selected = getPlayerCharacterByKey(this.selectedCharacterKey);
+    const previewRect = this.previewRect;
+    const selectedIndex = getPlayerCharacterIndexByKey(selected.key);
+    const cardLabelY = previewRect.y + previewRect.height - 52;
+    const shadowSize = Math.max(26, previewRect.width * 0.15);
+    const spriteSize = resolveIntegerSpriteSize(Math.min(previewRect.height * 0.58, 168), 2);
+    const bob = Math.sin(this.previewTime * 2.4) * 4;
+    const frame = PREVIEW_FRAME_SEQUENCE[Math.floor(this.previewTime * 6) % PREVIEW_FRAME_SEQUENCE.length];
+    const spriteX = Math.round(previewRect.x + previewRect.width * 0.5 - spriteSize * 0.5);
+    const spriteY = Math.round(previewRect.y + 18 + bob);
+    const shadowY = Math.round(previewRect.y + previewRect.height - 68);
+
+    ctx.save();
+    ctx.fillStyle = "rgba(7, 18, 29, 0.58)";
+    ctx.strokeStyle = "rgba(220, 239, 255, 0.22)";
+    ctx.lineWidth = 2;
+    ctx.fillRect(previewRect.x, previewRect.y, previewRect.width, previewRect.height);
+    ctx.strokeRect(previewRect.x, previewRect.y, previewRect.width, previewRect.height);
+
+    ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
+    ctx.fillRect(previewRect.x + 12, previewRect.y + 12, previewRect.width - 24, 16);
+
+    ctx.fillStyle = "rgba(17, 27, 21, 0.34)";
+    ctx.beginPath();
+    ctx.ellipse(previewRect.x + previewRect.width * 0.5, shadowY, shadowSize, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const previewSheet = this.previewSheets.get(selected.key);
+    const drewSheet = previewSheet?.isReady?.() && previewSheet.drawFrame(ctx, spriteX, spriteY, frame, spriteSize, spriteSize);
+    if (!drewSheet) {
+      this.renderPreviewFallback(ctx, selected, spriteX, spriteY, spriteSize);
+    }
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 28px Arial";
+    ctx.fillText(selected.name, this.width * 0.5, cardLabelY + 12);
+
+    ctx.fillStyle = "#c8d8f5";
+    ctx.font = "600 15px Arial";
+    ctx.fillText(
+      `${selectedIndex + 1} / ${PLAYER_CHARACTER_ROSTER.length}  •  ${selected.goggles.toUpperCase()} GOGGLES`,
+      this.width * 0.5,
+      cardLabelY + 40,
+    );
+    ctx.restore();
+  }
+
+  renderPreviewFallback(ctx, character, x, y, size) {
+    const centerX = x + size * 0.5;
+    const centerY = y + size * 0.54;
+    ctx.save();
+    ctx.fillStyle = character.bodyBottom;
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, size * 0.2, size * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = character.highlight;
+    ctx.beginPath();
+    ctx.ellipse(centerX - size * 0.05, centerY - size * 0.06, size * 0.07, size * 0.12, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#7dd38d";
+    ctx.fillRect(centerX - size * 0.015, centerY - size * 0.34, size * 0.03, size * 0.08);
+    ctx.fillStyle = character.leaf;
+    ctx.beginPath();
+    ctx.ellipse(centerX + size * 0.07, centerY - size * 0.32, size * 0.08, size * 0.04, -0.25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  renderRosterCards(ctx) {
+    for (let index = 0; index < this.characterButtons.length; index += 1) {
+      const button = this.characterButtons[index];
+      const character = getPlayerCharacterByKey(button.characterKey);
+      const rect = this.getButtonRect(button);
+      const pressed = Boolean(button?.__sceneButton?.pressed);
+      const selected = character.key === this.selectedCharacterKey;
+      const previewSheet = this.previewSheets.get(character.key);
+      const spriteSize = resolveIntegerSpriteSize(Math.min(rect.height * 0.62, rect.width * 0.56), 1);
+      const spriteX = Math.round(rect.x + 10);
+      const spriteY = Math.round(rect.y + rect.height * 0.5 - spriteSize * 0.5 - 8);
+      const frame = selected ? 1 : 0;
+
+      ctx.save();
+      ctx.fillStyle = selected ? "rgba(102, 161, 74, 0.30)" : "rgba(16, 28, 46, 0.78)";
+      ctx.strokeStyle = selected ? "#dff6a4" : pressed ? "#dbe6ff" : "rgba(194, 212, 240, 0.36)";
+      ctx.lineWidth = selected ? 3 : 2;
+      ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+      ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+
+      if (previewSheet?.isReady?.()) {
+        previewSheet.drawFrame(ctx, spriteX, spriteY, frame, spriteSize, spriteSize);
+      } else {
+        this.renderPreviewFallback(ctx, character, spriteX, spriteY, spriteSize);
+      }
+
+      ctx.fillStyle = "#f7fbff";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.font = "700 16px Arial";
+      ctx.fillText(character.name.split(" ")[0].toUpperCase(), rect.x + spriteSize + 18, rect.y + rect.height * 0.44);
+      ctx.fillStyle = "#bfd0eb";
+      ctx.font = "600 12px Arial";
+      ctx.fillText(`${character.goggles.toUpperCase()} GOGGLES`, rect.x + spriteSize + 18, rect.y + rect.height * 0.68);
+      ctx.restore();
+    }
   }
 
   handlePointerDown(pointer, game) {
@@ -214,6 +478,64 @@ export class MenuScene {
     }
 
     return false;
+  }
+
+  ensurePreviewSheets() {
+    if (this.previewLoadPromise) {
+      return this.previewLoadPromise;
+    }
+
+    this.previewLoadPromise = Promise.all(
+      PLAYER_CHARACTER_ROSTER.map(async (character) => {
+        let sheet = this.previewSheets.get(character.key);
+        if (!sheet) {
+          sheet = new SpriteSheet(buildPlayerCharacterSheetDataUrl(character.key), {
+            frameWidth: 64,
+            frameHeight: 64,
+            columns: 4,
+            rows: 1,
+            fallbackColor: character.bodyBottom,
+          });
+          this.previewSheets.set(character.key, sheet);
+        }
+
+        try {
+          await sheet.load();
+        } catch {
+          // Keep menu usable with fallback art.
+        }
+      }),
+    ).finally(() => {
+      this.previewLoadPromise = null;
+    });
+
+    return this.previewLoadPromise;
+  }
+
+  startSelectedCharacter(game) {
+    const targetGame = game ?? this.activeGame;
+    if (!targetGame) {
+      return;
+    }
+
+    const selectedKey = saveSelectedPlayerCharacterKey(this.selectedCharacterKey);
+    targetGame.sceneData = {
+      ...targetGame.sceneData,
+      playerCharacterKey: selectedKey,
+    };
+    targetGame.eventBus?.emit?.("ui_click", { source: "start_game", key: selectedKey });
+    targetGame.switchScene("versus", {
+      restart: true,
+      playerCharacterKey: selectedKey,
+    });
+  }
+
+  shiftSelection(direction) {
+    this.selectedCharacterKey = cyclePlayerCharacterKey(this.selectedCharacterKey, direction);
+  }
+
+  setSelectedCharacter(key) {
+    this.selectedCharacterKey = getPlayerCharacterByKey(key).key;
   }
 
   createButton(label, onPress) {
@@ -404,7 +726,7 @@ export class MenuScene {
     ctx.fillStyle = "#ffffff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = "700 26px Arial";
+    ctx.font = "700 24px Arial";
     ctx.fillText(meta?.label ?? "Button", rect.x + rect.width * 0.5, rect.y + rect.height * 0.5);
     ctx.restore();
   }

@@ -1,8 +1,6 @@
 ﻿# sprites/
 
-Phase 6 placeholder sprite assets for Phase 7 wiring.
-
-These files are temporary and exist only to keep loading/rendering contracts stable until final art is delivered.
+Active sprite assets for the current fruit-combat theme.
 
 ## Option C Loading Behavior
 

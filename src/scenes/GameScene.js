@@ -16,6 +16,16 @@ import { CAMERA_LERP, PLAYER_BULLET_DAMAGE } from "../config/constants.js";
 import { HUD } from "../ui/HUD.js";
 import { Button } from "../ui/Button.js";
 import { Joystick } from "../ui/Joystick.js";
+import {
+  getActorFruitTheme,
+  getBulletFruitTheme,
+  getEnemyFruitTheme,
+} from "../theme/fruitCombatTheme.js";
+import {
+  buildPlayerCharacterSheetDataUrl,
+  getPlayerCharacterByKey,
+  loadSelectedPlayerCharacterKey,
+} from "../theme/playerRoster.js";
 
 const WORLD_MIN_WIDTH = 1600;
 const WORLD_MULT = 3;
@@ -119,6 +129,8 @@ export class GameScene {
     this.playerSheet = null;
     this.enemySheet = null;
     this.bulletSheet = null;
+    this.playerCharacterKey = loadSelectedPlayerCharacterKey();
+    this.loadedPlayerCharacterKey = null;
     this.runStartedAtMs = 0;
     this.elapsedMs = 0;
     this.playerAnimator = new Animator({ idle: { frames: [0], fps: 4, loop: true }, run: { frames: [1], fps: 8, loop: true }, jump: { frames: [2], fps: 8, loop: true }, fall: { frames: [3], fps: 8, loop: true } }, "idle");
@@ -126,8 +138,25 @@ export class GameScene {
 
   onEnter(game, transition = {}) {
     const payload = transition?.payload ?? transition ?? {};
+    const nextCharacterKey = this.resolvePlayerCharacterKey(payload, game);
+    const characterChanged =
+      nextCharacterKey !== this.playerCharacterKey || nextCharacterKey !== this.loadedPlayerCharacterKey;
+    this.playerCharacterKey = nextCharacterKey;
+    game.sceneData = {
+      ...game.sceneData,
+      playerCharacterKey: nextCharacterKey,
+    };
+    if (characterChanged) {
+      this.preloadPromise = null;
+      this.assetsReady = false;
+      this.playerSheet = null;
+      this.loadedPlayerCharacterKey = null;
+    }
     if (!this.preloadPromise) this.preloadPromise = this.preloadAssets();
     if (!this.player || payload.restart === true) this.resetRun(game);
+    if (this.player) {
+      this.player.characterKey = this.playerCharacterKey;
+    }
     this.layout(game.viewWidth, game.viewHeight);
     if (this.player) {
       this.updateStaticLevelGeometry(game.viewHeight || 1);
@@ -154,14 +183,20 @@ export class GameScene {
     }
   }
 
+  resolvePlayerCharacterKey(payload = {}, game) {
+    const candidate = payload?.playerCharacterKey ?? game?.sceneData?.playerCharacterKey;
+    return getPlayerCharacterByKey(typeof candidate === "string" ? candidate : loadSelectedPlayerCharacterKey()).key;
+  }
+
   async preloadAssets() {
     this.assetsReady = false;
     this.assetsError = null;
     this.assetsErrorLogged = false;
 
-    this.playerSheet = new SpriteSheet("/sprites/player_sheet.svg", { frameWidth: 64, frameHeight: 64, columns: 4, rows: 1 });
+    this.loadedPlayerCharacterKey = this.playerCharacterKey;
+    this.playerSheet = new SpriteSheet(buildPlayerCharacterSheetDataUrl(this.playerCharacterKey), { frameWidth: 64, frameHeight: 64, columns: 4, rows: 1 });
     this.enemySheet = new SpriteSheet("/sprites/enemy_sheet.svg", { frameWidth: 64, frameHeight: 64, columns: 4, rows: 1 });
-    this.bulletSheet = new SpriteSheet("/sprites/bullets.svg", { frameWidth: 24, frameHeight: 32, columns: 5, rows: 1 });
+    this.bulletSheet = new SpriteSheet("/sprites/bullets.svg", { frameWidth: 24, frameHeight: 32, columns: 6, rows: 1 });
 
     try {
       const loaded = await Promise.all([
@@ -191,6 +226,7 @@ export class GameScene {
     this.groundY = (game.viewHeight || 1) - GROUND_H;
     this.releaseRunObjects();
     this.player = new Player({ x: 220, y: this.groundY - 40, width: 28, height: 40 }); this.player.isPlayer = true;
+    this.player.characterKey = this.playerCharacterKey;
     this.updateStaticLevelGeometry(game.viewHeight || 1, false);
     this.enemies = []; this.bullets = []; this.playerBullets = []; this.enemyBullets = [];
     this.background = new Background(this.buildBackgroundLayers(game.viewHeight || 1), "#9ab0d4");
@@ -233,7 +269,45 @@ export class GameScene {
   bindEvents(eventBus) {
     this.unbindEvents();
     this.eventOff.push(eventBus.on("enemy_shoot", ({ enemy }) => this.fireEnemyBullet(enemy, eventBus)));
-    this.eventOff.push(eventBus.on("enemy_killed", ({ enemy }) => { const c = center(enemy); this.particles.burst(14, { x: c.x, y: c.y, life: 0.4, size: 2, color: "#fca5a5" }); }));
+    this.eventOff.push(eventBus.on("bullet_hit", ({ bullet, target }) => {
+      const impact = target ? center(target) : center(bullet);
+      const theme = getBulletFruitTheme(bullet);
+      this.spawnFruitBurst(impact.x, impact.y, 5, theme.juiceColors, {
+        lifeMin: 0.14,
+        lifeMax: 0.24,
+        speedMin: 16,
+        speedMax: 54,
+        sizeMin: 1,
+        sizeMax: 2.2,
+      });
+    }));
+    this.eventOff.push(eventBus.on("enemy_killed", ({ enemy }) => {
+      const c = center(enemy);
+      const theme = getActorFruitTheme(enemy);
+      this.spawnFruitBurst(c.x, c.y, 14, theme.juiceColors, {
+        lifeMin: 0.22,
+        lifeMax: 0.48,
+        speedMin: 24,
+        speedMax: 104,
+        sizeMin: 1.3,
+        sizeMax: 3,
+      });
+    }));
+    this.eventOff.push(eventBus.on("player_hit", ({ player, source, isFatal }) => {
+      if (!player || source === "fall") {
+        return;
+      }
+      const c = center(player);
+      const theme = getActorFruitTheme(player);
+      this.spawnFruitBurst(c.x, c.y, isFatal ? 12 : 8, theme.juiceColors, {
+        lifeMin: 0.18,
+        lifeMax: 0.34,
+        speedMin: 18,
+        speedMax: isFatal ? 86 : 58,
+        sizeMin: 1.1,
+        sizeMax: 2.7,
+      });
+    }));
   }
 
   unbindEvents() { for (const off of this.eventOff) off?.(); this.eventOff = []; }
@@ -444,18 +518,71 @@ export class GameScene {
     return state;
   }
 
+  spawnFruitBurst(x, y, count, colors, options = {}) {
+    const palette = Array.isArray(colors) && colors.length > 0 ? colors : ["#ffffff"];
+    const total = Math.max(0, Math.floor(Number(count) || 0));
+    const lifeMin = Math.max(0.06, Number(options.lifeMin) || 0.12);
+    const lifeMax = Math.max(lifeMin, Number(options.lifeMax) || lifeMin);
+    const speedMin = Math.max(0, Number(options.speedMin) || 12);
+    const speedMax = Math.max(speedMin, Number(options.speedMax) || speedMin);
+    const sizeMin = Math.max(0.6, Number(options.sizeMin) || 1);
+    const sizeMax = Math.max(sizeMin, Number(options.sizeMax) || sizeMin);
+
+    for (let index = 0; index < total; index += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = speedMin + Math.random() * (speedMax - speedMin);
+      const life = lifeMin + Math.random() * (lifeMax - lifeMin);
+      const size = sizeMin + Math.random() * (sizeMax - sizeMin);
+      this.particles.emit({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - speed * 0.18,
+        life,
+        size,
+        color: palette[index % palette.length],
+        shape: index % 3 === 0 ? "square" : "circle",
+      });
+    }
+  }
+
   firePlayerBullet(game) {
     const wants = this.shootQueued || this.shootHeld; if (!wants || this.player.active === false) return;
     const t = nowMs(); if (!this.player.canShoot(t)) return;
     const b = this.playerBulletPool.acquire(), c = center(this.player);
-    b.fire({ x: c.x, y: c.y - 4, directionX: this.player.facing >= 0 ? 1 : -1, directionY: 0, speed: PLAYER_BULLET_SPEED, damage: PLAYER_BULLET_DAMAGE, owner: "player", lifetimeMs: BULLET_LIFE_MS, color: "#3b82f6" });
+    const theme = getActorFruitTheme(this.player);
+    b.fire({
+      x: c.x,
+      y: c.y - 4,
+      directionX: this.player.facing >= 0 ? 1 : -1,
+      directionY: 0,
+      speed: PLAYER_BULLET_SPEED,
+      damage: PLAYER_BULLET_DAMAGE,
+      owner: "player",
+      lifetimeMs: BULLET_LIFE_MS,
+      color: theme.bulletCore,
+      spriteFrame: theme.bulletFrame,
+      characterKey: this.player.characterKey,
+    });
     this.player.markShot(t); this.playerBullets.push(b); this.bullets.push(b); this.shootQueued = false; emit(game.eventBus, "bullet_fired", { owner: "player", bullet: b });
   }
 
   fireEnemyBullet(enemy, bus) {
     if (!enemy || enemy.active === false || !this.player || this.player.active === false) return;
     const b = this.enemyBulletPool.acquire(), from = center(enemy), to = center(this.player), dx = to.x - from.x, dy = to.y - from.y, len = Math.hypot(dx, dy) || 1;
-    b.fire({ x: from.x, y: from.y, directionX: dx / len, directionY: dy / len, speed: ENEMY_BULLET_SPEED, damage: Math.max(4, Number(enemy.damage) || 8), owner: enemy, lifetimeMs: BULLET_LIFE_MS, color: "#ef4444" });
+    const theme = getEnemyFruitTheme(enemy.type);
+    b.fire({
+      x: from.x,
+      y: from.y,
+      directionX: dx / len,
+      directionY: dy / len,
+      speed: ENEMY_BULLET_SPEED,
+      damage: Math.max(4, Number(enemy.damage) || 8),
+      owner: enemy,
+      lifetimeMs: BULLET_LIFE_MS,
+      color: theme.bulletCore,
+      spriteFrame: theme.bulletFrame,
+    });
     this.enemyBullets.push(b); this.bullets.push(b); emit(bus, "bullet_fired", { owner: "enemy", bullet: b });
   }
 
@@ -490,7 +617,7 @@ export class GameScene {
   }
 
   getEnemySpriteFrame(enemy) {
-    return ENEMY_SPRITE_FRAME_BY_TYPE[enemy?.type] ?? 0;
+    return getEnemyFruitTheme(enemy?.type).spriteFrame;
   }
 
   getEnemyOutlineColor(enemy) {
@@ -499,18 +626,89 @@ export class GameScene {
 
   renderActorSprite(ctx, camera, entity, spriteSheet, frameIndex, scale, outlineColor) {
     if (!entity || entity.active === false || !camera) return;
+    void outlineColor;
     const visualScale = Math.max(1, Number(scale) || 1);
-    const drawWidth = entity.width * visualScale;
-    const drawHeight = entity.height * visualScale;
+    const drawWidth = Math.max(1, Math.round(entity.width * visualScale));
+    const drawHeight = Math.max(1, Math.round(entity.height * visualScale));
     const drawX = entity.x - (drawWidth - entity.width) * 0.5;
     const drawY = entity.y - (drawHeight - entity.height);
     const projected = camera.worldToScreen(drawX, drawY);
+    const shadow = camera.worldToScreen(entity.x + entity.width * 0.5, entity.y + entity.height - 3);
+    const facing = Number(entity.facing) < 0 ? -1 : 1;
     if (!Number.isFinite(projected?.x) || !Number.isFinite(projected?.y)) return;
-    spriteSheet?.drawFrame(ctx, projected.x, projected.y, frameIndex, drawWidth, drawHeight);
     ctx.save();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = outlineColor;
-    ctx.strokeRect(projected.x, projected.y, drawWidth, drawHeight);
+    ctx.fillStyle = "rgba(24, 32, 26, 0.18)";
+    ctx.beginPath();
+    ctx.ellipse(shadow.x, shadow.y, drawWidth * 0.18, Math.max(4, drawHeight * 0.05), 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (facing < 0) {
+      ctx.translate(projected.x + drawWidth, projected.y);
+      ctx.scale(-1, 1);
+      spriteSheet?.drawFrame(ctx, 0, 0, frameIndex, drawWidth, drawHeight);
+    } else {
+      spriteSheet?.drawFrame(ctx, projected.x, projected.y, frameIndex, drawWidth, drawHeight);
+    }
+    ctx.restore();
+  }
+
+  renderBulletSprite(ctx, camera, bullet) {
+    if (!bullet || bullet.active === false || !camera) return;
+    const theme = getBulletFruitTheme(bullet);
+    const visualScale = typeof bullet.owner === "string" ? 1.9 : 1.75;
+    const drawWidth = Math.max(8, Math.round(bullet.width * visualScale));
+    const drawHeight = Math.max(8, Math.round(bullet.height * visualScale));
+    const drawX = bullet.x - (drawWidth - bullet.width) * 0.5;
+    const drawY = bullet.y - (drawHeight - bullet.height) * 0.5;
+    const projected = camera.worldToScreen(drawX, drawY);
+    if (!Number.isFinite(projected?.x) || !Number.isFinite(projected?.y)) return;
+
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.shadowColor = theme.bulletGlow;
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = theme.bulletCore;
+    ctx.beginPath();
+    ctx.ellipse(
+      projected.x + drawWidth * 0.5,
+      projected.y + drawHeight * 0.58,
+      drawWidth * 0.28,
+      drawHeight * 0.24,
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+    ctx.restore();
+
+    this.bulletSheet?.drawFrame(ctx, projected.x, projected.y, bullet.spriteFrame ?? theme.bulletFrame, drawWidth, drawHeight);
+  }
+
+  renderPlayerSprite(ctx, camera, entity, spriteSheet, frameIndex, scale) {
+    if (!entity || entity.active === false || !camera) return;
+    const visualScale = Math.max(1, Number(scale) || 1);
+    const drawWidth = Math.max(1, Math.round(entity.width * visualScale));
+    const drawHeight = Math.max(1, Math.round(entity.height * visualScale));
+    const drawX = entity.x - (drawWidth - entity.width) * 0.5;
+    const drawY = entity.y - (drawHeight - entity.height);
+    const projected = camera.worldToScreen(drawX, drawY);
+    const shadow = camera.worldToScreen(entity.x + entity.width * 0.5, entity.y + entity.height - 3);
+    if (!Number.isFinite(projected?.x) || !Number.isFinite(projected?.y)) return;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(24, 32, 26, 0.22)";
+    ctx.beginPath();
+    ctx.ellipse(shadow.x, shadow.y, drawWidth * 0.18, Math.max(4, drawHeight * 0.05), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    if (entity.facing < 0) {
+      ctx.translate(projected.x + drawWidth, projected.y);
+      ctx.scale(-1, 1);
+      spriteSheet?.drawFrame(ctx, 0, 0, frameIndex, drawWidth, drawHeight);
+    } else {
+      spriteSheet?.drawFrame(ctx, projected.x, projected.y, frameIndex, drawWidth, drawHeight);
+    }
     ctx.restore();
   }
 
@@ -523,13 +721,89 @@ export class GameScene {
       for (const b of this.bullets) if (b?.active !== false) b.render(ctx, game.camera);
       if (this.player?.active !== false) this.player.render(ctx, game.camera);
     } else {
-      this.renderActorSprite(ctx, game.camera, this.player, this.playerSheet, this.playerAnimator.getCurrentFrame(), PLAYER_VISUAL_SCALE, "#4fc3f7");
+      this.renderPlayerSprite(ctx, game.camera, this.player, this.playerSheet, this.playerAnimator.getCurrentFrame(), PLAYER_VISUAL_SCALE);
       for (const e of this.enemies) if (e?.active !== false) this.renderActorSprite(ctx, game.camera, e, this.enemySheet, this.getEnemySpriteFrame(e), ENEMY_VISUAL_SCALE, this.getEnemyOutlineColor(e));
-      for (const b of this.bullets) if (b?.active !== false) { const p = game.camera.worldToScreen(b.x, b.y); this.bulletSheet?.drawFrame(ctx, p.x, p.y, typeof b.owner === "string" ? 0 : 2, b.width, b.height); }
+      for (const b of this.bullets) if (b?.active !== false) this.renderBulletSprite(ctx, game.camera, b);
     }
     this.particles.render(ctx, game.camera);
     this.hud.render(ctx, this.hudState);
     this.joystick.render(ctx); this.jumpButton.render(ctx); this.shootButton.render(ctx); this.pauseButton.render(ctx);
+  }
+
+  getDebugLines(game) {
+    const lines = [];
+    if (this.player) {
+      lines.push(`Player x=${this.player.x.toFixed(2)} y=${this.player.y.toFixed(2)}`);
+      lines.push(`Player frac x=${(this.player.x % 1).toFixed(2)} y=${(this.player.y % 1).toFixed(2)}`);
+      const metrics = this.getPlayerDrawMetrics(this.player, game?.camera);
+      lines.push(`Player draw x=${metrics.screenX} y=${metrics.screenY} snapped=${Number.isInteger(metrics.screenX) && Number.isInteger(metrics.screenY)}`);
+      lines.push(`Player grounded=${Boolean(this.player.onGround)} support=${this.player.supportPlatformId ?? "none"}`);
+    }
+    const camera = game?.camera;
+    if (camera) {
+      lines.push(`Camera x=${Number(camera.x).toFixed(2)} y=${Number(camera.y).toFixed(2)}`);
+      lines.push(`Camera raw x=${Number(camera.rawX ?? camera.x).toFixed(2)} y=${Number(camera.rawY ?? camera.y).toFixed(2)}`);
+    }
+    return lines;
+  }
+
+  renderDebugOverlay(ctx, game) {
+    const camera = game?.camera;
+    if (!camera) {
+      return;
+    }
+
+    ctx.save();
+    ctx.strokeStyle = "#ffcf5c";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+
+    for (const platform of this.platforms) {
+      const projected = camera.worldToScreen(platform.x, platform.y);
+      ctx.strokeRect(projected.x, projected.y, Math.round(platform.width), Math.round(platform.height));
+    }
+
+    if (this.player) {
+      const body = camera.worldToScreen(this.player.x, this.player.y);
+      const metrics = this.getPlayerDrawMetrics(this.player, camera);
+      ctx.setLineDash([]);
+      ctx.strokeStyle = "#7ae582";
+      ctx.strokeRect(body.x, body.y, Math.round(this.player.width), Math.round(this.player.height));
+      ctx.fillStyle = "rgba(122, 229, 130, 0.14)";
+      ctx.fillRect(body.x, body.y, Math.round(this.player.width), Math.round(this.player.height));
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(metrics.originX, metrics.originY, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(metrics.originX - 6, metrics.originY);
+      ctx.lineTo(metrics.originX + 6, metrics.originY);
+      ctx.moveTo(metrics.originX, metrics.originY - 6);
+      ctx.lineTo(metrics.originX, metrics.originY + 6);
+      ctx.strokeStyle = "#ffffff";
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  getPlayerDrawMetrics(entity, camera) {
+    const visualScale = Math.max(1, Number(PLAYER_VISUAL_SCALE) || 1);
+    const drawWidth = Math.max(1, Math.round(entity.width * visualScale));
+    const drawHeight = Math.max(1, Math.round(entity.height * visualScale));
+    const drawX = entity.x - (drawWidth - entity.width) * 0.5;
+    const drawY = entity.y - (drawHeight - entity.height);
+    const projected = camera?.worldToScreen?.(drawX, drawY) ?? { x: drawX, y: drawY };
+    return {
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight,
+      screenX: Number(projected?.x) || 0,
+      screenY: Number(projected?.y) || 0,
+      originX: Number(projected?.x) || 0,
+      originY: Number(projected?.y) || 0,
+    };
   }
 
   handlePointerDown(pointer) {

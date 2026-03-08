@@ -9,15 +9,15 @@ import {
 
 const ROWS = [
   {
-    label: "BULLETS DODGED",
+    label: "SHOTS DODGED",
     keys: ["bulletsDodged", "dodges", "dodged"],
   },
   {
-    label: "DEATHS",
+    label: "SPLATS",
     keys: ["deaths"],
   },
   {
-    label: "KILLS",
+    label: "KOS",
     keys: ["kills"],
   },
 ];

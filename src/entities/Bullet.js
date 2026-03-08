@@ -18,6 +18,7 @@ export class Bullet extends Entity {
     this.lifetimeMs = DEFAULT_LIFETIME_MS;
     this.ageMs = 0;
     this.color = DEFAULT_COLOR;
+    this.spriteFrame = 0;
   }
 
   fire({
@@ -30,6 +31,7 @@ export class Bullet extends Entity {
     owner = null,
     lifetimeMs = DEFAULT_LIFETIME_MS,
     color = DEFAULT_COLOR,
+    spriteFrame = 0,
     shape = "rect",
   } = {}) {
     const normalizedX = Number(directionX);
@@ -70,6 +72,7 @@ export class Bullet extends Entity {
     this.ageMs = 0;
     this.dodgeCounted = false;
     this.color = typeof color === 'string' && color.length > 0 ? color : DEFAULT_COLOR;
+    this.spriteFrame = Number.isFinite(Number(spriteFrame)) ? Math.max(0, Math.floor(Number(spriteFrame))) : 0;
     this.shape = shape === "circle" ? "circle" : "rect";
 
     this.setVelocity(this.directionX * this.speed, this.directionY * this.speed);
@@ -113,6 +116,7 @@ export class Bullet extends Entity {
     this.lifetimeMs = DEFAULT_LIFETIME_MS;
     this.ageMs = 0;
     this.color = DEFAULT_COLOR;
+    this.spriteFrame = 0;
     this.shape = "rect";
     this.deactivate();
   }
