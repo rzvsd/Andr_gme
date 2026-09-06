@@ -62,4 +62,7 @@ This project is architected so independent agents can work simultaneously:
 
 ## License
 
-Private project.
+Source-visible prototype — all rights reserved. No open-source license is granted:
+no reuse, redistribution, or derivative works without the owner's written permission.
+(If this repository should be fully private instead, flip its visibility to
+Private under GitHub → Settings → Danger Zone.)
