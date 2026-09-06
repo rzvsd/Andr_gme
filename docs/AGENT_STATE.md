@@ -3,7 +3,7 @@
 ## Current Milestone
 - `Milestone`: Hardening M10–M18 (CI, pause timer, outline, untracked output, behavioral tests, docs, audio cleanup, scene split)
 - `Branch`: `test`
-- `Status`: `in_progress` (M10, M12–M18 done; M11 scene split pending)
+- `Status`: `done` (M10–M18 complete, all green)
 
 ## Shipped Before This Round
 - Phase 1–7: engine, entities, systems, rendering, UI scenes, audio managers.
@@ -20,9 +20,9 @@
 | M15 | `src/scenes/GameScene.js` render section | BUG-024 outline restored | done |
 | M13 | git index only | Untracked generated Capacitor output | done |
 | M14 | `tests/` (new files) | 19 behavioral tests (50 total) | done |
-| M17 | `docs/AGENT_STATE.md`, `project overview/BUGS.md`, `tests/README.md` | Docs match the tree | in_progress |
-| M16 | `public/audio/` | Placeholder cleanup | pending |
-| M11 | `src/scenes/VersusGameScene.js` + `src/scenes/versus/*` | Scene split | pending |
+| M17 | `docs/AGENT_STATE.md`, `project overview/BUGS.md`, `tests/README.md` | Docs match the tree | done |
+| M16 | `public/audio/` | Placeholder cleanup | done |
+| M11 | `src/scenes/VersusGameScene.js` (431-line conductor) + `src/scenes/versus/*` | Scene split into 7 modules, dead legacy renderers removed | done |
 
 ## Rules
 - Strict one-agent-per-file/folder ownership (see table; M12/M15 share
@@ -33,10 +33,11 @@
 - No edits to `project overview/SAFETY_REVIEW.md`.
 
 ## Verification Gates
-- `npm test` green (15 files, 50 tests). ✅
+- `npm test` green (16 files, 53 tests). ✅
 - `npm run build` succeeds. ✅
 - `npx cap sync android` regenerates untracked output with clean `git status`. ✅
 - `:app:testDebugUnitTest` passes. ✅
+- Versus scene under 600 lines with full smoke coverage. ✅
 - Scene flow works: `Menu -> Game -> Pause -> Resume -> GameOver -> Retry/Menu`. ✅
 - Pause excludes paused time (regression test). ✅
 - Audio managers initialize without runtime errors when assets are missing. ✅
