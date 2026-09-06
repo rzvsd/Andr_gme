@@ -1,11 +1,140 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="64" viewBox="0 0 256 64">
-  <rect width="256" height="64" fill="#101820"/>
-  <rect x="8" y="8" width="48" height="48" fill="#3a86ff"/>
-  <rect x="72" y="8" width="48" height="48" fill="#3a86ff" opacity="0.85"/>
-  <rect x="136" y="8" width="48" height="48" fill="#3a86ff" opacity="0.7"/>
-  <rect x="200" y="8" width="48" height="48" fill="#3a86ff" opacity="0.55"/>
-  <text x="12" y="22" font-size="10" font-family="monospace" fill="#ffffff">idle</text>
-  <text x="77" y="22" font-size="10" font-family="monospace" fill="#ffffff">run</text>
-  <text x="139" y="22" font-size="10" font-family="monospace" fill="#ffffff">jump</text>
-  <text x="203" y="22" font-size="10" font-family="monospace" fill="#ffffff">fall</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="64" viewBox="0 0 256 64" fill="none">
+  <defs>
+    <filter id="softShadow" x="-18%" y="-18%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="1.2" stdDeviation="1.2" flood-color="#17231b" flood-opacity="0.24"/>
+    </filter>
+    <linearGradient id="pearSkin" x1="0" y1="-16" x2="0" y2="26" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d8ea73"/>
+      <stop offset="1" stop-color="#86b53d"/>
+    </linearGradient>
+    <linearGradient id="pearShade" x1="10" y1="-8" x2="14" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7ea23d" stop-opacity="0"/>
+      <stop offset="1" stop-color="#597a28" stop-opacity="0.72"/>
+    </linearGradient>
+    <linearGradient id="lensGrad" x1="0" y1="0" x2="0" y2="8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#dff8ff"/>
+      <stop offset="1" stop-color="#75c8f2"/>
+    </linearGradient>
+    <linearGradient id="packGrad" x1="0" y1="0" x2="0" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4d7244"/>
+      <stop offset="1" stop-color="#274329"/>
+    </linearGradient>
+    <linearGradient id="launcherGrad" x1="0" y1="0" x2="0" y2="8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f6bd64"/>
+      <stop offset="1" stop-color="#cf7e2b"/>
+    </linearGradient>
+    <linearGradient id="bootGrad" x1="0" y1="0" x2="0" y2="4" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a74239"/>
+      <stop offset="1" stop-color="#65241d"/>
+    </linearGradient>
+
+    <g id="pearBody">
+      <path d="M0 -16C7 -16 12 -11 12 -4C12 1 14 6 14 11C14 19 8 25 0 26C-9 26 -15 19 -15 10C-15 5 -13 1 -12 -5C-11 -11 -6 -16 0 -16Z" fill="url(#pearSkin)" stroke="#1b2a16" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M-5 -12C-9 -7 -10 2 -10 9C-10 16 -7 21 -3 24" stroke="#edf7a8" stroke-opacity="0.8" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M6 -12C11 -7 12 4 12 11C12 18 8 23 2 25C7 24 13 19 13 11C13 6 11 1 11 -4C11 -10 7 -15 0 -15C2 -15 4 -14 6 -12Z" fill="url(#pearShade)"/>
+      <path d="M-6 10H8" stroke="#5f7d2a" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+      <path d="M-8 8.5H7.5V13.4H-8Z" fill="#4f5b2c" fill-opacity="0.9" stroke="#1b2a16" stroke-width="1.1" stroke-linejoin="round"/>
+      <rect x="-1.3" y="-20.5" width="2.6" height="6.2" rx="1.2" fill="#6a4327" stroke="#1b2a16" stroke-width="1"/>
+      <path d="M1.8 -18.4C7.4 -19.8 10.3 -17.7 10.9 -13.9C6.6 -12.2 3.5 -13.2 1.8 -18.4Z" fill="#4d8a40" stroke="#1b2a16" stroke-width="1" stroke-linejoin="round"/>
+    </g>
+
+    <g id="goggles">
+      <path d="M-10.5 -6H9.6" stroke="#202c25" stroke-width="3.2" stroke-linecap="round"/>
+      <rect x="-9.8" y="-10.6" width="9.2" height="8.4" rx="2.6" fill="url(#lensGrad)" stroke="#16211b" stroke-width="1.3"/>
+      <rect x="0.8" y="-10.3" width="9.2" height="8.4" rx="2.6" fill="url(#lensGrad)" stroke="#16211b" stroke-width="1.3"/>
+      <path d="M-0.4 -6.6H1.5" stroke="#16211b" stroke-width="1.2" stroke-linecap="round"/>
+      <circle cx="-6.2" cy="-7.6" r="1.2" fill="#ffffff" fill-opacity="0.78"/>
+      <circle cx="4.4" cy="-7.2" r="1.2" fill="#ffffff" fill-opacity="0.78"/>
+    </g>
+
+    <g id="leafPack">
+      <path d="M0 0H8.6C10.5 2.8 10.7 12.8 8.9 17.8H0.6C-1.3 13 -1.2 2.7 0 0Z" fill="url(#packGrad)" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+      <path d="M1.8 3.5H7.2" stroke="#8db178" stroke-width="1.1" stroke-linecap="round"/>
+      <path d="M8.7 5.2L10.7 6.4" stroke="#16211b" stroke-width="1" stroke-linecap="round"/>
+      <path d="M2.8 -1.2C6.8 -5 10.2 -3.9 11 -0.5C7.6 1.3 4.7 1 2.8 -1.2Z" fill="#6aae52" stroke="#16211b" stroke-width="1" stroke-linejoin="round"/>
+    </g>
+
+    <g id="launcher">
+      <path d="M0 0H12.8V5.2H0Z" fill="url(#launcherGrad)" stroke="#1b2a16" stroke-width="1.2" stroke-linejoin="round"/>
+      <path d="M2 -1.1H8.1V0.8H2Z" fill="#ffd88f" stroke="#1b2a16" stroke-width="0.9"/>
+      <path d="M12 1.8H17V3.2H12Z" fill="#6c4824"/>
+      <path d="M-4 1.5L0 0V5.2L-4.4 5.4Z" fill="#9a693f" stroke="#1b2a16" stroke-width="1" stroke-linejoin="round"/>
+      <circle cx="6.7" cy="2.6" r="1.3" fill="#f7efcb" stroke="#1b2a16" stroke-width="0.8"/>
+      <circle cx="6.7" cy="2.6" r="0.4" fill="#9cc94f"/>
+    </g>
+
+    <g id="glove">
+      <path d="M-2.1 -1H2.2C3.1 0 3.1 2.3 1.7 3.4H-1.3C-2.5 2.4 -2.8 0.4 -2.1 -1Z" fill="#f5f4ed" stroke="#16211b" stroke-width="1" stroke-linejoin="round"/>
+    </g>
+
+    <g id="boot">
+      <path d="M0 0H5.7L7.2 3H-0.5Z" fill="url(#bootGrad)" stroke="#16211b" stroke-width="1" stroke-linejoin="round"/>
+    </g>
+  </defs>
+
+  <g transform="translate(0 0)" filter="url(#softShadow)">
+    <use href="#leafPack" transform="translate(16.5 25.3)"/>
+    <path d="M25.1 31.4L23.2 43.4L26.8 43.4L28.6 31.9Z" fill="#617a2d" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <use href="#boot" transform="translate(22.4 43.2)"/>
+    <path d="M32.8 31.8L35.1 43.3H38.7L36.5 31.7Z" fill="#738e36" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <use href="#boot" transform="translate(34 43.1)"/>
+    <path d="M21.6 20.8L19 26.8L21.9 29.1L24.7 24.2L29.6 25L29 28.7L32.4 29.4L33.4 22.2L27.8 20.4Z" fill="#5e7a2b" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M34.3 21.6L38.8 23.1L42.4 27.3L40 29.6L35.9 26.7L32.4 25.8Z" fill="#7f9c41" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <use href="#glove" transform="translate(30.8 27.9)"/>
+    <use href="#glove" transform="translate(41 26.8)"/>
+    <use href="#pearBody" transform="translate(29.6 26.2)"/>
+    <use href="#goggles" transform="translate(29.7 26.3)"/>
+    <use href="#launcher" transform="translate(41.8 25.6)"/>
+  </g>
+
+  <g transform="translate(64 0)" filter="url(#softShadow)">
+    <use href="#leafPack" transform="translate(16.3 25.1)"/>
+    <path d="M26.8 31.2L20.4 40.8L23.7 43L30.3 34Z" fill="#617a2d" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <use href="#boot" transform="translate(19.8 41.1)"/>
+    <path d="M33.8 31.2L39.2 42.2H42.9L37.6 31.2Z" fill="#758f36" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <use href="#boot" transform="translate(38.8 42.1)"/>
+    <path d="M22.5 20.7L17.2 24.8L19.6 28L24.7 24.8L29.2 26.1L28.8 29.4L32.2 29.8L33 23.4L27.9 20.4Z" fill="#5d782b" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M34.2 21L39.8 22.3L44.4 27.6L42.1 29.8L37.4 26.6L32.9 25.6Z" fill="#83a043" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <use href="#glove" transform="translate(30.8 28.6)"/>
+    <use href="#glove" transform="translate(43 27.4)"/>
+    <g transform="translate(30.6 26.2) rotate(-6)">
+      <use href="#pearBody"/>
+      <use href="#goggles"/>
+    </g>
+    <use href="#launcher" transform="translate(43.4 25.3) rotate(-4 0 0)"/>
+  </g>
+
+  <g transform="translate(128 0)" filter="url(#softShadow)">
+    <use href="#leafPack" transform="translate(17.1 20.4)"/>
+    <path d="M27.4 26.2L22.2 34.8L25.8 36.8L31.7 28.7Z" fill="#5e782c" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <use href="#boot" transform="translate(22.2 35.5)"/>
+    <path d="M34.3 25.8L41.2 33L44.2 29.8L37.6 23.8Z" fill="#7c9940" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <use href="#boot" transform="translate(40.9 31.6)"/>
+    <path d="M24.1 15.8L20 10.4L22.8 8.1L27 12.3L30.4 13.5L29.3 16.6L26.1 16.1Z" fill="#5f792d" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M34.1 16L39 17.5L43.1 22L40.8 24.2L36.7 21.5L32.6 20.3Z" fill="#83a043" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <use href="#glove" transform="translate(26.1 9.4)"/>
+    <use href="#glove" transform="translate(41 22.1)"/>
+    <g transform="translate(31.1 21.7) rotate(-12)">
+      <use href="#pearBody"/>
+      <use href="#goggles"/>
+    </g>
+    <use href="#launcher" transform="translate(41.8 18.3) rotate(-16 0 0)"/>
+  </g>
+
+  <g transform="translate(192 0)" filter="url(#softShadow)">
+    <use href="#leafPack" transform="translate(16.8 24.4)"/>
+    <path d="M27.2 31.5L25.8 43.8L29.5 43.8L30.8 31.7Z" fill="#617a2d" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <use href="#boot" transform="translate(25 43.6)"/>
+    <path d="M34.4 31.4L37.1 44H40.8L38.1 31.5Z" fill="#769137" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <use href="#boot" transform="translate(36 43.8)"/>
+    <path d="M22.8 21.4L19.3 28.1L22.2 29.9L25.6 25L30.1 26.7L29 30.1L32 31.4L34 24.4L28.4 21Z" fill="#5e792d" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M34.8 22L39.4 24.4L43.7 29.4L41.2 31.4L37 28L33 26.2Z" fill="#81a043" stroke="#16211b" stroke-width="1.2" stroke-linejoin="round"/>
+    <use href="#glove" transform="translate(30.8 30.4)"/>
+    <use href="#glove" transform="translate(42.2 29.5)"/>
+    <g transform="translate(30.7 26.4) rotate(8)">
+      <use href="#pearBody"/>
+      <use href="#goggles"/>
+    </g>
+    <use href="#launcher" transform="translate(41.4 26.7) rotate(10 0 0)"/>
+  </g>
 </svg>

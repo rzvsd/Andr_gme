@@ -1,5 +1,12 @@
 ﻿import * as ButtonModule from "../ui/Button.js";
 import { loadSettings, saveSettings } from "../config/settings.js";
+import {
+  cycleVersusMatchModeKey,
+  getVersusMatchMode,
+  loadSelectedVersusMatchModeKey,
+  saveSelectedVersusMatchModeKey,
+  VERSUS_MATCH_MODE_ROSTER,
+} from "../config/versusMatchMode.js";
 import { SpriteSheet } from "../rendering/SpriteSheet.js";
 import {
   buildPlayerCharacterSheetDataUrl,
@@ -52,15 +59,22 @@ export class MenuScene {
     this.activeButton = null;
     this.settings = loadSettings();
     this.previewRect = { x: 0, y: 0, width: 0, height: 0 };
+    this.matchModeRect = { x: 0, y: 0, width: 0, height: 0 };
     this.selectedCharacterKey = loadSelectedPlayerCharacterKey();
+    this.selectedMatchModeKey = loadSelectedVersusMatchModeKey();
     this.previewSheets = new Map();
     this.previewLoadPromise = null;
     this.previewTime = 0;
     this.keyBound = false;
     this.activeGame = null;
+    this.modeButtons = [];
     this.onKeyDown = (event) => {
       const code = event?.code;
-      if (code === "ArrowLeft" || code === "KeyA") {
+      if (code === "KeyQ") {
+        this.shiftMatchMode(-1);
+      } else if (code === "KeyE") {
+        this.shiftMatchMode(1);
+      } else if (code === "ArrowLeft" || code === "KeyA") {
         this.shiftSelection(-1);
       } else if (code === "ArrowRight" || code === "KeyD") {
         this.shiftSelection(1);
@@ -87,8 +101,11 @@ export class MenuScene {
     this.selectedCharacterKey = getPlayerCharacterByKey(
       payload?.playerCharacterKey ?? game?.sceneData?.playerCharacterKey ?? loadSelectedPlayerCharacterKey()
     ).key;
+    this.selectedMatchModeKey = getVersusMatchMode(
+      payload?.matchMode ?? game?.sceneData?.matchMode ?? loadSelectedVersusMatchModeKey()
+    ).key;
 
-    this.playButton = this.createButton("Start", () => {
+    this.playButton = this.createButton("START DUEL", () => {
       this.startSelectedCharacter(game);
     });
     this.prevButton = this.createButton("<", () => {
@@ -126,9 +143,21 @@ export class MenuScene {
       button.characterKey = character.key;
       return button;
     });
+    this.modeButtons = VERSUS_MATCH_MODE_ROSTER.map((mode) => {
+      const button = this.createButton(mode.name, () => {
+        this.setSelectedMatchMode(mode.key);
+        game.eventBus?.emit?.("ui_click", {
+          source: "match_mode_select",
+          mode: mode.key,
+        });
+      });
+      button.matchModeKey = mode.key;
+      return button;
+    });
 
     this.syncSettingsButtons();
     this.buttons = [
+      ...this.modeButtons,
       ...this.characterButtons,
       this.playButton,
       this.prevButton,
@@ -187,6 +216,30 @@ export class MenuScene {
     this.setButtonRect(this.prevButton, previewX + 14, arrowY, arrowSize, arrowSize);
     this.setButtonRect(this.nextButton, previewX + previewWidth - arrowSize - 14, arrowY, arrowSize, arrowSize);
 
+    const modeGap = Math.max(12, this.width * 0.018);
+    const modeWidth = Math.round(Math.min(228, Math.max(118, (this.width - sideInset * 2 - modeGap) / 2)));
+    const modeHeight = Math.round(Math.min(58, Math.max(44, this.height * 0.064)));
+    const modeTotalWidth = modeWidth * 2 + modeGap;
+    const modeX = Math.round((this.width - modeTotalWidth) * 0.5);
+    const modeY = Math.round(previewY + previewHeight + Math.max(18, this.height * 0.024));
+
+    this.matchModeRect = {
+      x: modeX,
+      y: modeY,
+      width: modeTotalWidth,
+      height: modeHeight,
+    };
+
+    for (let index = 0; index < this.modeButtons.length; index += 1) {
+      this.setButtonRect(
+        this.modeButtons[index],
+        modeX + index * (modeWidth + modeGap),
+        modeY,
+        modeWidth,
+        modeHeight,
+      );
+    }
+
     const cardGap = Math.max(10, this.width * 0.012);
     const columns = CARD_COLUMNS;
     const rows = CARD_ROWS;
@@ -198,7 +251,7 @@ export class MenuScene {
     const gridWidth = Math.round(columns * cardWidth + (columns - 1) * cardGap);
     const gridHeight = Math.round(rows * cardHeight + (rows - 1) * cardGap);
     const gridX = Math.round((this.width - gridWidth) * 0.5);
-    const gridY = Math.round(previewY + previewHeight + Math.max(22, this.height * 0.028));
+    const gridY = Math.round(modeY + modeHeight + Math.max(18, this.height * 0.024));
 
     for (let index = 0; index < this.characterButtons.length; index += 1) {
       const column = index % columns;
@@ -267,13 +320,14 @@ export class MenuScene {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = "700 54px Arial";
-    ctx.fillText("FRUIT SOLDIER SELECT", this.width * 0.5, Math.max(48, this.height * 0.09));
+    ctx.fillText("BULLET DODGE ARENA", this.width * 0.5, Math.max(48, this.height * 0.09));
 
     ctx.font = "400 20px Arial";
     ctx.fillStyle = "#b9cbe8";
-    ctx.fillText("Pick your commando before deployment", this.width * 0.5, Math.max(84, this.height * 0.135));
+    ctx.fillText("Pick duel mode + ninja, then start", this.width * 0.5, Math.max(84, this.height * 0.135));
 
     this.renderPreviewPanel(ctx);
+    this.renderMatchModeSelector(ctx);
     this.renderRosterCards(ctx);
 
     this.renderButton(ctx, this.prevButton);
@@ -281,6 +335,22 @@ export class MenuScene {
     this.renderButton(ctx, this.playButton);
     this.renderButton(ctx, this.soundButton);
     this.renderButton(ctx, this.musicButton);
+
+    // M4: controls hint so versus is instantly playable without a tutorial screen.
+    ctx.fillStyle = "rgba(185, 203, 232, 0.92)";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const hintSize = this.width < 560 ? 13 : 15;
+    ctx.font = `400 ${hintSize}px Arial`;
+    const hintY = Math.min(this.height - 14, this.soundButton?.y + this.soundButton?.height + 26 || this.height - 14);
+    if (hintY > this.height * 0.5) {
+      ctx.fillText(
+        "P1: A/D move · W jump · J shoot    |    P2: ←/→ move · ↑ jump · L shoot    |    Touch: drag move · swipe up jump · tap/hold shoot",
+        this.width * 0.5,
+        hintY,
+        Math.max(0, this.width - 24),
+      );
+    }
 
     ctx.restore();
   }
@@ -334,23 +404,89 @@ export class MenuScene {
   }
 
   renderPreviewFallback(ctx, character, x, y, size) {
+    // M8: ninja fallback matching the roster sheets + in-game procedural fighter.
     const centerX = x + size * 0.5;
-    const centerY = y + size * 0.54;
+    const headY = y + size * 0.34;
+    const headR = size * 0.17;
     ctx.save();
     ctx.fillStyle = character.bodyBottom;
     ctx.beginPath();
-    ctx.ellipse(centerX, centerY, size * 0.2, size * 0.28, 0, 0, Math.PI * 2);
+    ctx.arc(centerX, headY, headR, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = character.highlight;
+    ctx.fillStyle = character.bodyTop;
     ctx.beginPath();
-    ctx.ellipse(centerX - size * 0.05, centerY - size * 0.06, size * 0.07, size * 0.12, -0.4, 0, Math.PI * 2);
+    ctx.arc(centerX, headY - headR * 0.25, headR * 0.95, Math.PI, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#7dd38d";
-    ctx.fillRect(centerX - size * 0.015, centerY - size * 0.34, size * 0.03, size * 0.08);
-    ctx.fillStyle = character.leaf;
+    ctx.fillStyle = "#202826";
+    ctx.fillRect(centerX - headR * 0.75, headY - headR * 0.15, headR * 1.5, headR * 0.5);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(centerX + headR * 0.1, headY - headR * 0.08, headR * 0.45, headR * 0.32);
+    ctx.strokeStyle = character.leaf;
+    ctx.lineWidth = Math.max(2, size * 0.03);
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.ellipse(centerX + size * 0.07, centerY - size * 0.32, size * 0.08, size * 0.04, -0.25, 0, Math.PI * 2);
+    ctx.moveTo(centerX - headR * 0.9, headY - headR * 0.55);
+    ctx.lineTo(centerX + headR * 0.9, headY - headR * 0.55);
+    ctx.moveTo(centerX - headR * 0.8, headY - headR * 0.5);
+    ctx.lineTo(centerX - headR * 1.5, headY - headR * 0.1);
+    ctx.stroke();
+    ctx.fillStyle = character.bodyTop;
+    ctx.beginPath();
+    ctx.moveTo(centerX - headR * 0.85, headY + headR * 0.7);
+    ctx.lineTo(centerX + headR * 0.85, headY + headR * 0.7);
+    ctx.lineTo(centerX + headR * 0.6, headY + headR * 1.9);
+    ctx.lineTo(centerX - headR * 0.6, headY + headR * 1.9);
+    ctx.closePath();
     ctx.fill();
+    ctx.restore();
+  }
+
+  renderMatchModeSelector(ctx) {
+    const selectedMode = getVersusMatchMode(this.selectedMatchModeKey);
+    const rect = this.matchModeRect;
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "700 14px Arial";
+    ctx.fillStyle = "#d7e4f7";
+    ctx.fillText("MATCH MODE", this.width * 0.5, rect.y - 12);
+
+    for (const button of this.modeButtons) {
+      this.renderMatchModeButton(ctx, button);
+    }
+
+    ctx.font = "600 13px Arial";
+    ctx.fillStyle = "#bfd0eb";
+    ctx.fillText(selectedMode.description, this.width * 0.5, rect.y + rect.height + 20);
+    ctx.restore();
+  }
+
+  renderMatchModeButton(ctx, button) {
+    const rect = this.getButtonRect(button);
+    const meta = isObject(button.__sceneButton) ? button.__sceneButton : null;
+    const pressed = Boolean(meta?.pressed);
+    const selected = button.matchModeKey === this.selectedMatchModeKey;
+    const mode = getVersusMatchMode(button.matchModeKey);
+
+    ctx.save();
+    ctx.fillStyle = selected ? "rgba(88, 129, 58, 0.34)" : "rgba(16, 28, 46, 0.78)";
+    ctx.strokeStyle = selected ? "#dff6a4" : pressed ? "#dbe6ff" : "rgba(194, 212, 240, 0.36)";
+    ctx.lineWidth = selected ? 3 : 2;
+    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+    ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#f7fbff";
+    ctx.font = "700 16px Arial";
+    ctx.fillText(mode.name.toUpperCase(), rect.x + rect.width * 0.5, rect.y + rect.height * 0.44);
+    ctx.fillStyle = "#bfd0eb";
+    ctx.font = "600 12px Arial";
+    ctx.fillText(mode.shortLabel, rect.x + rect.width * 0.5, rect.y + rect.height * 0.72);
     ctx.restore();
   }
 
@@ -519,15 +655,26 @@ export class MenuScene {
     }
 
     const selectedKey = saveSelectedPlayerCharacterKey(this.selectedCharacterKey);
+    const selectedMatchModeKey = saveSelectedVersusMatchModeKey(this.selectedMatchModeKey);
     targetGame.sceneData = {
       ...targetGame.sceneData,
       playerCharacterKey: selectedKey,
+      matchMode: selectedMatchModeKey,
     };
-    targetGame.eventBus?.emit?.("ui_click", { source: "start_game", key: selectedKey });
+    targetGame.eventBus?.emit?.("ui_click", {
+      source: "start_game",
+      key: selectedKey,
+      matchMode: selectedMatchModeKey,
+    });
     targetGame.switchScene("versus", {
       restart: true,
       playerCharacterKey: selectedKey,
+      matchMode: selectedMatchModeKey,
     });
+  }
+
+  shiftMatchMode(direction) {
+    this.selectedMatchModeKey = cycleVersusMatchModeKey(this.selectedMatchModeKey, direction);
   }
 
   shiftSelection(direction) {
@@ -536,6 +683,10 @@ export class MenuScene {
 
   setSelectedCharacter(key) {
     this.selectedCharacterKey = getPlayerCharacterByKey(key).key;
+  }
+
+  setSelectedMatchMode(key) {
+    this.selectedMatchModeKey = getVersusMatchMode(key).key;
   }
 
   createButton(label, onPress) {
