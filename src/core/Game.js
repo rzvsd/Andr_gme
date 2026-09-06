@@ -153,7 +153,9 @@ export class Game {
   }
 
   handleResize() {
-    this.dpr = window.devicePixelRatio || 1;
+    // M5: cap DPR at 2 — phones report 3-4x which kills fill-rate + memory for zero visual gain.
+    const rawDpr = Number(window.devicePixelRatio) || 1;
+    this.dpr = Math.min(2, Math.max(1, rawDpr));
     this.viewWidth = Math.max(1, window.innerWidth);
     this.viewHeight = Math.max(1, window.innerHeight);
 
@@ -194,7 +196,9 @@ export class Game {
     this.lastTime = now;
     this.accumulator += frameTime;
 
-    while (this.accumulator >= this.fixedStepMs) {
+    // M5: cap catch-up steps — slow frames drop time instead of spiralling (max 5 x 16.6ms).
+    let steps = 0;
+    while (this.accumulator >= this.fixedStepMs && steps < 5) {
       try {
         this.update(this.fixedStepMs / 1000);
       } catch (error) {
@@ -202,6 +206,10 @@ export class Game {
         return;
       }
       this.accumulator -= this.fixedStepMs;
+      steps += 1;
+    }
+    if (this.accumulator >= this.fixedStepMs) {
+      this.accumulator = 0;
     }
 
     const interpolationAlpha = this.accumulator / this.fixedStepMs;

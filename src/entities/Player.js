@@ -43,6 +43,7 @@ export class Player extends Entity {
       : PLAYER_FACING_MARKER_COLOR;
     this.moveIntent = 0;
     this.jumpRequested = false;
+    this.invulnerable = false;
   }
 
   applyInput(input, _deltaSeconds) {

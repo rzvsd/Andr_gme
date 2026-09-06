@@ -14,6 +14,14 @@ import { emitEvent, isActiveEntity, isFiniteNumber } from './systemUtils.js';
 import { parseVersusPlayerIndex, VERSUS_INVALID_PLAYER_INDEX } from './versusPlayerIndex.js';
 
 const PLATFORM_CONTACT_EPSILON = 0.0001;
+// M9: hit knockback — shove + small hop so trades reposition fighters instead of
+// stalling into point-blank bullet spam. X below max run speed (330), hop is small.
+const KNOCKBACK_X = 260;
+const KNOCKBACK_Y = -140;
+// M9: dodge window widened (0.65->0.85 height, 1.5->2.0 bullet) — old window
+// under-counted jump-apex grazes where the bullet visibly cleared the fighter.
+const DODGE_HEIGHT_FACTOR = 0.85;
+const DODGE_BULLET_FACTOR = 2;
 const PLATFORM_DEFAULTS = [
   {
     id: VERSUS_LEFT_PLATFORM_ID,
@@ -268,6 +276,13 @@ export class VersusCollisionSystem {
       const target = players[targetIndex];
 
       if (isActiveEntity(target) && hasBounds(target) && Physics.aabbOverlap(bullet, target)) {
+        // M3: spawn protection — protected targets don't take hits and don't grant dodges.
+        if (target.invulnerable === true) {
+          if (this.#deactivateBulletOnPlatformHit(bullet, platforms, eventBus, shooter, shooterIndex)) {
+            continue;
+          }
+          continue;
+        }
         const damage = isFiniteNumber(bullet.damage) ? Math.max(0, Number(bullet.damage)) : 0;
         const targetHealthBefore = isFiniteNumber(target.health) ? Number(target.health) : null;
         const targetWasActive = target.active !== false;
@@ -286,6 +301,10 @@ export class VersusCollisionSystem {
           target.active === false ||
           (targetHealthBefore !== null && targetHealthAfter !== null && targetHealthBefore > 0 && targetHealthAfter <= 0)
         );
+
+        if (!isFatal) {
+          this.#applyKnockback(target, shooter, bullet);
+        }
 
         deactivateEntity(bullet);
 
@@ -332,6 +351,39 @@ export class VersusCollisionSystem {
     }
   }
 
+  #applyKnockback(target, shooter, bullet) {
+    if (!target || typeof target !== "object") {
+      return;
+    }
+    let direction = 0;
+    const bulletDir = Number(bullet?.directionX);
+    if (Number.isFinite(bulletDir) && bulletDir !== 0) {
+      direction = bulletDir > 0 ? 1 : -1;
+    } else if (isFiniteNumber(target.x) && isFiniteNumber(shooter?.x)) {
+      const gap = Number(target.x) - Number(shooter.x);
+      direction = gap >= 0 ? 1 : -1;
+    } else {
+      direction = 1;
+    }
+
+    if (isFiniteNumber(target.vx)) {
+      target.vx = direction * KNOCKBACK_X;
+    }
+    // Small hop only when grounded — airborne targets keep their arc so juggles stay fair.
+    if (target.onGround === true && isFiniteNumber(target.vy)) {
+      target.vy = KNOCKBACK_Y;
+      target.onGround = false;
+    }
+    // Face the attacker so retaliation reads instantly.
+    if (target.facing === 1 || target.facing === -1) {
+      if (isFiniteNumber(shooter?.x) && isFiniteNumber(target.x)) {
+        target.facing = Number(shooter.x) >= Number(target.x) ? 1 : -1;
+      } else {
+        target.facing = direction >= 0 ? -1 : 1;
+      }
+    }
+  }
+
   #deactivateBulletOnPlatformHit(bullet, platforms, eventBus, shooter, shooterIndex) {
     for (const platform of platforms) {
       if (!isActiveEntity(platform)) {
@@ -364,6 +416,9 @@ export class VersusCollisionSystem {
     if (!isActiveEntity(bullet) || bullet.dodgeCounted === true || !isActiveEntity(target)) {
       return;
     }
+    if (target.invulnerable === true) {
+      return;
+    }
 
     const targetCenter = centerOf(target);
     const bulletCenter = centerOf(bullet);
@@ -378,7 +433,7 @@ export class VersusCollisionSystem {
       return;
     }
 
-    const verticalWindow = Number(target.height) * 0.65 + Number(bullet.height) * 1.5;
+    const verticalWindow = Number(target.height) * DODGE_HEIGHT_FACTOR + Number(bullet.height) * DODGE_BULLET_FACTOR;
     const verticalDistance = Math.abs(bulletCenter.y - targetCenter.y);
     if (verticalDistance > verticalWindow) {
       return;

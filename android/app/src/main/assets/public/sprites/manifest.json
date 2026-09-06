@@ -1,41 +1,41 @@
 {
   "version": 1,
-  "temporaryPlaceholders": true,
+  "temporaryPlaceholders": false,
   "assets": [
     {
       "name": "player_sheet",
       "path": "/sprites/player_sheet.svg",
-      "usage": "Player animation sheet placeholder. Contracts: idle, run, jump, fall."
+      "usage": "Four-frame horizontal player strip for the pear commando: idle, run, jump, fall."
     },
     {
       "name": "enemy_sheet",
       "path": "/sprites/enemy_sheet.svg",
-      "usage": "Enemy animation sheet placeholder for common enemy classes."
+      "usage": "Fruit enemy roster for the single-player arena mode: scout, spotter, agile, brute."
     },
     {
       "name": "bullets",
       "path": "/sprites/bullets.svg",
-      "usage": "Projectile sprite placeholder for player and enemy bullets."
+      "usage": "Mini-fruit projectile strip for pear and enemy fruit shots."
     },
     {
       "name": "platform_tiles",
       "path": "/sprites/platform_tiles.svg",
-      "usage": "Platform and ground tile placeholder sheet."
+      "usage": "Bridge surface and underside accents for platform rendering."
     },
     {
       "name": "particles",
       "path": "/sprites/particles.svg",
-      "usage": "Effects placeholder for spark, smoke, and impact particles."
+      "usage": "Reserved effects sheet for future fruit impacts and juice particles."
     },
     {
       "name": "background_layer_1",
       "path": "/sprites/background_layer_1.svg",
-      "usage": "Far parallax background placeholder layer."
+      "usage": "Far sky and hill layer for split-screen versus scenes."
     },
     {
       "name": "background_layer_2",
       "path": "/sprites/background_layer_2.svg",
-      "usage": "Near parallax background placeholder layer."
+      "usage": "Near haze and cloud layer for split-screen versus scenes."
     }
   ]
 }

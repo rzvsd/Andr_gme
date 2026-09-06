@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Bullet Dodge Arena</string>
+    <string name="title_activity_main">Bullet Dodge Arena</string>
+    <string name="package_name">com.andr.gme</string>
+    <string name="custom_url_scheme">com.andr.gme</string>
+</resources>

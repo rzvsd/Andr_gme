@@ -1,5 +1,11 @@
 {
   "appId": "com.andr.gme",
-  "appName": "andr_gme",
-  "webDir": "dist"
+  "appName": "Bullet Dodge Arena",
+  "webDir": "dist",
+  "backgroundColor": "#b6c6e5",
+  "orientation": "landscape",
+  "android": {
+    "backgroundColor": "#b6c6e5",
+    "allowMixedContent": false
+  }
 }

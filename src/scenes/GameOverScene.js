@@ -1,5 +1,6 @@
 import * as ButtonModule from "../ui/Button.js";
 import * as ScoreBoardModule from "../ui/ScoreBoard.js";
+import { getVersusMatchMode } from "../config/versusMatchMode.js";
 import {
   asNumber,
   isObject,
@@ -114,10 +115,14 @@ function collectResultMeta(game, transition) {
   const winnerIndex = Math.round(asNumber(versus?.winnerIndex, asNumber(merged.winnerIndex, -1)));
   const loserIndex = Math.round(asNumber(versus?.loserIndex, asNumber(merged.loserIndex, -1)));
   const rawKillsToWin = asNumber(versus?.killsToWin, asNumber(merged.killsToWin, -1));
+  const matchMode = getVersusMatchMode(payload?.matchMode ?? merged.matchMode);
 
   return {
     isVersus,
     mode: isVersus ? MODE_VERSUS : "game",
+    matchModeKey: matchMode.key,
+    p1Label: matchMode.p1Label,
+    p2Label: matchMode.p2Label,
     winnerIndex: winnerIndex >= 0 ? winnerIndex : -1,
     loserIndex: loserIndex >= 0 ? loserIndex : -1,
     killsToWin: rawKillsToWin >= 1 ? Math.round(rawKillsToWin) : null,
@@ -153,13 +158,20 @@ export class GameOverScene {
 
     this.retryButton = this.createButton("Retry", () => {
       if (this.resultMeta.isVersus) {
-        game.switchScene("versus", { restart: true });
+        game.switchScene("versus", {
+          restart: true,
+          playerCharacterKey: game?.sceneData?.playerCharacterKey,
+          matchMode: this.resultMeta.matchModeKey,
+        });
         return;
       }
       game.switchScene("game", { restart: true });
     });
     this.menuButton = this.createButton("Menu", () => {
-      game.switchScene("menu");
+      game.switchScene("menu", {
+        playerCharacterKey: game?.sceneData?.playerCharacterKey,
+        matchMode: this.resultMeta.matchModeKey,
+      });
     });
     this.buttons = [this.retryButton, this.menuButton];
     this.scoreBoard = this.createScoreBoard(this.stats);
@@ -630,9 +642,9 @@ export class GameOverScene {
 
   getVersusSubtitle() {
     const winner = this.resultMeta.winnerIndex === 0
-      ? "Player 1"
+      ? this.resultMeta.p1Label
       : this.resultMeta.winnerIndex === 1
-        ? "Player 2"
+        ? this.resultMeta.p2Label
         : "Match";
     const score = `${this.resultMeta.p1Kills}-${this.resultMeta.p2Kills}`;
     return `${winner} wins (${score})`;
@@ -641,16 +653,16 @@ export class GameOverScene {
   getScoreRows() {
     if (this.resultMeta.isVersus) {
       const winnerLabel = this.resultMeta.winnerIndex === 0
-        ? "Player 1"
+        ? this.resultMeta.p1Label
         : this.resultMeta.winnerIndex === 1
-          ? "Player 2"
+          ? this.resultMeta.p2Label
           : "N/A";
       const rows = [
         ["Winner", winnerLabel],
-        ["P1 Kills", this.resultMeta.p1Kills],
-        ["P2 Kills", this.resultMeta.p2Kills],
-        ["P1 Deaths", this.resultMeta.p1Deaths],
-        ["P2 Deaths", this.resultMeta.p2Deaths],
+        [`${this.resultMeta.p1Label} Kills`, this.resultMeta.p1Kills],
+        [`${this.resultMeta.p2Label} Kills`, this.resultMeta.p2Kills],
+        [`${this.resultMeta.p1Label} Deaths`, this.resultMeta.p1Deaths],
+        [`${this.resultMeta.p2Label} Deaths`, this.resultMeta.p2Deaths],
         ["Time", `${this.stats.timeSeconds}s`],
       ];
       if (this.resultMeta.killsToWin !== null) {

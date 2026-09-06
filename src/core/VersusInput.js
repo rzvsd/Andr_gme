@@ -4,10 +4,11 @@ const ACTION_JUMP = "jump";
 const ACTION_SHOOT = "shoot";
 const ACTIONS = [ACTION_LEFT, ACTION_RIGHT, ACTION_JUMP, ACTION_SHOOT];
 
-const TOUCH_ZONE_RATIO = 0.25;
-const HORIZONTAL_DEADZONE_PX = 12;
-const SWIPE_UP_THRESHOLD_PX = 32;
-const SHOOT_HOLD_DELAY_MS = 140;
+const TOUCH_ZONE_RATIO = 0.42;
+const MAX_POINTERS_PER_PLAYER = 2;
+const HORIZONTAL_DEADZONE_PX = 10;
+const SWIPE_UP_THRESHOLD_PX = 28;
+const SHOOT_HOLD_DELAY_MS = 120;
 const TAP_SHOOT_MAX_MS = 240;
 const TAP_MAX_TRAVEL_PX = 24;
 
@@ -92,7 +93,9 @@ export class VersusInput {
     ];
 
     this.pointerSessions = new Map();
-    this.activePointerByPlayer = [null, null];
+    // M7: up to MAX_POINTERS_PER_PLAYER fingers per player — first finger steers,
+    // any finger can tap/hold shoot or swipe jump. Enables move + shoot at once.
+    this.activePointersByPlayer = [[], []];
 
     this.playerInputs = [
       {
@@ -134,8 +137,8 @@ export class VersusInput {
 
   reset() {
     this.pointerSessions.clear();
-    this.activePointerByPlayer[0] = null;
-    this.activePointerByPlayer[1] = null;
+    this.activePointersByPlayer[0] = [];
+    this.activePointersByPlayer[1] = [];
 
     for (const player of this.players) {
       for (const action of ACTIONS) {
@@ -235,7 +238,11 @@ export class VersusInput {
     }
 
     const playerIndex = this.resolveTouchPlayer(x, width);
-    if (playerIndex < 0 || this.activePointerByPlayer[playerIndex] !== null) {
+    if (playerIndex < 0) {
+      return false;
+    }
+    const activeList = this.activePointersByPlayer[playerIndex];
+    if (!Array.isArray(activeList) || activeList.length >= MAX_POINTERS_PER_PLAYER) {
       return false;
     }
 
@@ -255,8 +262,11 @@ export class VersusInput {
     };
 
     this.pointerSessions.set(pointerId, session);
-    this.activePointerByPlayer[playerIndex] = pointerId;
-    this.syncTouchMoveDirection(session);
+    this.activePointersByPlayer[playerIndex].push(pointerId);
+    // Only the first (steering) finger drives movement; second finger is actions-only.
+    if (this.activePointersByPlayer[playerIndex][0] === pointerId) {
+      this.syncTouchMoveDirection(session);
+    }
     this.updateShootHold(session, nowMs);
     return true;
   }
@@ -287,7 +297,10 @@ export class VersusInput {
       session.zoneWidth = width * TOUCH_ZONE_RATIO;
     }
 
-    this.syncTouchMoveDirection(session);
+    // Only the steering finger (first) drives left/right; action finger moves freely.
+    if (this.activePointersByPlayer[session.playerIndex]?.[0] === pointerId) {
+      this.syncTouchMoveDirection(session);
+    }
     if (!session.jumpTriggered && session.startY - session.lastY >= SWIPE_UP_THRESHOLD_PX) {
       session.jumpTriggered = true;
       this.players[session.playerIndex].pressed.jump = true;
@@ -350,25 +363,49 @@ export class VersusInput {
     const player = this.players[session.playerIndex];
     if (!session.shootHoldTriggered && nowMs - session.downAtMs >= SHOOT_HOLD_DELAY_MS) {
       session.shootHoldTriggered = true;
-      player.touch.shoot = true;
       player.pressed.shoot = true;
+    }
+    this.recomputeTouchShoot(session.playerIndex);
+  }
+
+  recomputeTouchShoot(playerIndex) {
+    const player = this.players[playerIndex];
+    if (!player) {
       return;
     }
-    player.touch.shoot = session.shootHoldTriggered;
+    const ids = this.activePointersByPlayer[playerIndex] ?? [];
+    let held = false;
+    for (const id of ids) {
+      const session = this.pointerSessions.get(id);
+      if (session?.shootHoldTriggered) {
+        held = true;
+        break;
+      }
+    }
+    player.touch.shoot = held;
   }
 
   updateShootHoldForPlayer(playerIndex, nowMs) {
-    const pointerId = this.activePointerByPlayer[playerIndex];
-    if (pointerId === null) {
+    const ids = this.activePointersByPlayer[playerIndex] ?? [];
+    if (ids.length === 0) {
       return;
     }
-    const session = this.pointerSessions.get(pointerId);
-    if (!session) {
-      this.activePointerByPlayer[playerIndex] = null;
-      this.players[playerIndex].touch.shoot = false;
-      return;
+    let pruned = false;
+    for (const id of [...ids]) {
+      const session = this.pointerSessions.get(id);
+      if (!session) {
+        const at = this.activePointersByPlayer[playerIndex].indexOf(id);
+        if (at >= 0) {
+          this.activePointersByPlayer[playerIndex].splice(at, 1);
+          pruned = true;
+        }
+        continue;
+      }
+      this.updateShootHold(session, nowMs);
     }
-    this.updateShootHold(session, nowMs);
+    if (pruned) {
+      this.recomputeTouchShoot(playerIndex);
+    }
   }
 
   releasePointer(pointer, allowTapShoot) {
@@ -409,14 +446,28 @@ export class VersusInput {
     }
 
     this.pointerSessions.delete(pointerId);
-    if (this.activePointerByPlayer[session.playerIndex] === pointerId) {
-      this.activePointerByPlayer[session.playerIndex] = null;
+    const activeList = this.activePointersByPlayer[session.playerIndex];
+    const wasSteering = Array.isArray(activeList) && activeList[0] === pointerId;
+    if (Array.isArray(activeList)) {
+      const at = activeList.indexOf(pointerId);
+      if (at >= 0) {
+        activeList.splice(at, 1);
+      }
     }
 
     const player = this.players[session.playerIndex];
-    player.touch.left = false;
-    player.touch.right = false;
-    player.touch.shoot = false;
+    if (wasSteering) {
+      // Promote the remaining finger to steering so movement never sticks.
+      const nextId = this.activePointersByPlayer[session.playerIndex][0];
+      const nextSession = nextId !== undefined ? this.pointerSessions.get(nextId) : null;
+      if (nextSession) {
+        this.syncTouchMoveDirection(nextSession);
+      } else {
+        player.touch.left = false;
+        player.touch.right = false;
+      }
+    }
+    this.recomputeTouchShoot(session.playerIndex);
     return true;
   }
 }

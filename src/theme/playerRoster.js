@@ -133,74 +133,53 @@ const PLAYER_CHARACTER_MAP = new Map(
   PLAYER_CHARACTER_ROSTER.map((character, index) => [character.key, { ...character, index }])
 );
 
-function buildBodyDefinition(character) {
-  const { bodyVariant, bodyTop, bodyBottom, highlight, shadow, leaf, strap } = character;
-  const fill = `fill="url(#bodyGrad)" stroke="#1b2a16" stroke-width="1.5" stroke-linejoin="round"`;
-
+function buildVariantSprig(character) {
+  // M8: tiny per-variant accent so the 6 bodies aren't identical — silhouette stays ninja.
+  const { bodyVariant, leaf, highlight } = character;
+  const stroke = `stroke="${leaf}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
   switch (bodyVariant) {
     case "strawberry":
-      return `
-        <g id="fruitBody">
-          <path d="M0 -12C8 -12 13 -6 13 1C13 10 7 19 0 19C-7 19 -13 10 -13 1C-13 -6 -8 -12 0 -12Z" ${fill}/>
-          <path d="M-9 -11C-4 -15 4 -15 9 -11" stroke="${leaf}" stroke-width="2" stroke-linecap="round"/>
-          <path d="M-4 7H6" stroke="${shadow}" stroke-width="1.4" stroke-linecap="round" opacity="0.45"/>
-          <circle cx="-4.5" cy="-1" r="0.8" fill="${highlight}"/>
-          <circle cx="2.2" cy="-2.5" r="0.8" fill="${highlight}"/>
-          <circle cx="5.5" cy="4.4" r="0.8" fill="${highlight}"/>
-          <path d="M-8 8.5H8V13H-8Z" fill="${strap}" stroke="#1b2a16" stroke-width="1"/>
-        </g>`;
+      return `<path d="M-9 -13C-4 -17 4 -17 9 -13" ${stroke}/>`;
     case "orange":
-      return `
-        <g id="fruitBody">
-          <circle cx="0" cy="4" r="13" ${fill}/>
-          <path d="M0 -9L1.7 4L0 15L-1.7 4Z" fill="${highlight}" opacity="0.95"/>
-          <path d="M-12 4L0 2.3L12 4L0 5.8Z" fill="${highlight}" opacity="0.95"/>
-          <path d="M-4 -13C0 -15.5 4 -14.3 5.4 -10.6" stroke="${leaf}" stroke-width="1.9" stroke-linecap="round"/>
-          <path d="M-8 10.2H8V14.6H-8Z" fill="${strap}" stroke="#1b2a16" stroke-width="1"/>
-        </g>`;
+      return `<path d="M-4 -14C0 -16.5 4 -15.3 5.4 -11.6" ${stroke}/>`;
     case "pineapple":
-      return `
-        <g id="fruitBody">
-          <path d="M-10 -7H9L13 -2V13L8 19H-9L-13 13V-2L-10 -7Z" ${fill}/>
-          <path d="M-9 -7L-5 -14L0 -9L5 -15L9 -7" stroke="${leaf}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M-8 -1H8" stroke="${highlight}" stroke-width="1.1" stroke-linecap="round"/>
-          <path d="M-8 6H8" stroke="${highlight}" stroke-width="1.1" stroke-linecap="round"/>
-          <path d="M-8 12H8" stroke="${highlight}" stroke-width="1.1" stroke-linecap="round"/>
-          <path d="M0 -3V16" stroke="${shadow}" stroke-width="1" stroke-linecap="round"/>
-          <path d="M-5 -1L5 15" stroke="${shadow}" stroke-width="1" stroke-linecap="round"/>
-          <path d="M5 -1L-5 15" stroke="${shadow}" stroke-width="1" stroke-linecap="round"/>
-          <path d="M-9 8.4H9V13.2H-9Z" fill="${strap}" stroke="#1b2a16" stroke-width="1"/>
-        </g>`;
+      return `<path d="M-9 -12L-5 -18L0 -13L5 -19L9 -12" ${stroke}/>`;
     case "banana":
-      return `
-        <g id="fruitBody">
-          <path d="M-12 2C-10 -9 -1 -14 10 -11C6 -4 3 2 1 8C-1 13 -4 17 -10 18C-11.4 16.8 -12 15 -12 12.8C-12 9.6 -12 6 -12 2Z" ${fill}/>
-          <path d="M-8.5 5.8C-6.7 -1.4 -1.8 -6.8 6.1 -8.8" stroke="${highlight}" stroke-width="1.5" stroke-linecap="round"/>
-          <path d="M-2 10H8" stroke="${shadow}" stroke-width="1.3" stroke-linecap="round" opacity="0.45"/>
-          <path d="M-4 9.2H8V13.1H-4Z" fill="${strap}" stroke="#1b2a16" stroke-width="1"/>
-        </g>`;
+      return `<path d="M-8.5 -12.5C-6.7 -15 -1.8 -16.5 6.1 -15.5" stroke="${highlight}" stroke-width="1.5" stroke-linecap="round"/>`;
     case "apple":
-      return `
-        <g id="fruitBody">
-          <path d="M0 -13C6 -13 10 -9 10 -4C13 -4 15 -1 15 5C15 14 8 21 0 21C-8 21 -15 14 -15 5C-15 -1 -13 -4 -10 -4C-10 -9 -6 -13 0 -13Z" ${fill}/>
-          <path d="M-4 -12C-1 -15 3 -15 5 -12" stroke="#7d2e25" stroke-width="1.2" stroke-linecap="round"/>
-          <path d="M-6 -11C-8 -15 -2 -18 2 -16" stroke="${leaf}" stroke-width="1.8" stroke-linecap="round"/>
-          <path d="M-6 9.8H7V14.1H-6Z" fill="${strap}" stroke="#1b2a16" stroke-width="1"/>
-          <path d="M-7 -7C-10 -1 -10 10 -5 17" stroke="${highlight}" stroke-width="1.8" stroke-linecap="round" opacity="0.82"/>
-        </g>`;
+      return `<path d="M-6 -13C-8 -17 -2 -20 2 -18" ${stroke}/>`;
     case "pear":
     default:
-      return `
-        <g id="fruitBody">
-          <path d="M0 -16C7 -16 12 -11 12 -4C12 1 14 6 14 11C14 19 8 25 0 26C-9 26 -15 19 -15 10C-15 5 -13 1 -12 -5C-11 -11 -6 -16 0 -16Z" ${fill}/>
-          <path d="M-5 -12C-9 -7 -10 2 -10 9C-10 16 -7 21 -3 24" stroke="${highlight}" stroke-width="2.4" stroke-linecap="round" opacity="0.82"/>
-          <path d="M6 -12C11 -7 12 4 12 11C12 18 8 23 2 25" stroke="${shadow}" stroke-width="1.7" stroke-linecap="round" opacity="0.55"/>
-          <path d="M-6 10H8" stroke="${shadow}" stroke-width="1.5" stroke-linecap="round" opacity="0.45"/>
-          <path d="M-8 8.5H7.5V13.4H-8Z" fill="${strap}" stroke="#1b2a16" stroke-width="1.1"/>
-          <rect x="-1.3" y="-20.5" width="2.6" height="6.2" rx="1.2" fill="#6a4327" stroke="#1b2a16" stroke-width="1"/>
-          <path d="M1.8 -18.4C7.4 -19.8 10.3 -17.7 10.9 -13.9C6.6 -12.2 3.5 -13.2 1.8 -18.4Z" fill="${leaf}" stroke="#1b2a16" stroke-width="1"/>
-        </g>`;
+      return `<path d="M1.8 -19.4C7.4 -20.8 10.3 -18.7 10.9 -14.9C6.6 -13.2 3.5 -14.2 1.8 -19.4Z" fill="${leaf}" stroke="#1b2a16" stroke-width="1"/>`;
   }
+}
+
+function buildBodyDefinition(character) {
+  // M8: one ninja silhouette for every roster entry — hood + eye slit + headband
+  // tails in leaf color + tunic in character gradient. Sheets now match the
+  // in-game procedural ninja and expectation.png instead of round fruit blobs.
+  // Keys/names/goggles/variants/colors are untouched, so roster tests stay green.
+  const { bodyTop, bodyBottom, highlight, shadow, strap } = character;
+  const fill = `fill="url(#bodyGrad)" stroke="#1b2a16" stroke-width="1.5" stroke-linejoin="round"`;
+  const sprig = buildVariantSprig(character);
+
+  return `
+    <g id="fruitBody">
+      <path d="M-11 -8H11L13 6V16L8 22H-9L-13 16V6L-11 -8Z" ${fill}/>
+      <path d="M-8 -4H8" stroke="${highlight}" stroke-width="1.4" stroke-linecap="round" opacity="0.5"/>
+      <path d="M-9 12.5H9V17.5H-9Z" fill="${strap}" stroke="#1b2a16" stroke-width="1"/>
+      <circle cx="0" cy="-8" r="12.5" fill="${bodyBottom}" stroke="#1b2a16" stroke-width="1.5"/>
+      <path d="M-9 -14C-4 -18 4 -18 9 -14L9 -10H-9Z" fill="${bodyTop}" stroke="#1b2a16" stroke-width="1.2"/>
+      <rect x="-8.5" y="-9.5" width="17" height="6.4" rx="2" fill="#202826" stroke="#1b2a16" stroke-width="1"/>
+      <rect x="1" y="-8.3" width="8" height="4" rx="1" fill="#ffffff"/>
+      <rect x="5.5" y="-8.3" width="2.6" height="4" fill="#111111"/>
+      <rect x="-12.5" y="-13.5" width="25" height="4.4" rx="1.5" fill="${character.leaf}" stroke="#1b2a16" stroke-width="1"/>
+      <path d="M-11 -12.5L-23 -9.5L-28 -1" stroke="${character.leaf}" stroke-width="3" stroke-linecap="round" fill="none"/>
+      <path d="M-11 -11L-21 -9" stroke="${character.leaf}" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.7"/>
+      ${sprig}
+      <circle cx="-5" cy="-4.5" r="0.9" fill="${highlight}"/>
+      <circle cx="-6.5" cy="2.5" r="0.9" fill="${shadow}" opacity="0.6"/>
+    </g>`;
 }
 
 function buildGoggleDefinition(character) {
@@ -398,6 +377,24 @@ export function cyclePlayerCharacterKey(currentKey, direction = 1) {
   const step = direction < 0 ? -1 : 1;
   const nextIndex = (currentIndex + step + PLAYER_CHARACTER_ROSTER.length) % PLAYER_CHARACTER_ROSTER.length;
   return PLAYER_CHARACTER_ROSTER[nextIndex].key;
+}
+
+export function pickRandomPlayerCharacterKey(excludedKey = null, randomValue = Math.random()) {
+  const normalizedExcludedKey =
+    typeof excludedKey === "string" && excludedKey.length > 0
+      ? getPlayerCharacterByKey(excludedKey).key
+      : null;
+  const pool = PLAYER_CHARACTER_ROSTER.filter((character) => character.key !== normalizedExcludedKey);
+  if (pool.length <= 0) {
+    return getPlayerCharacterByKey(excludedKey).key;
+  }
+
+  const numericRandom = Number(randomValue);
+  const normalizedRandom = Number.isFinite(numericRandom)
+    ? Math.min(0.999999, Math.max(0, numericRandom))
+    : Math.random();
+  const index = Math.min(pool.length - 1, Math.floor(normalizedRandom * pool.length));
+  return pool[index].key;
 }
 
 export function buildPlayerCharacterSheetSvg(characterOrKey) {

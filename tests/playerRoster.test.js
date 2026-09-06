@@ -3,6 +3,7 @@ import {
   buildPlayerCharacterSheetDataUrl,
   getPlayerCharacterByKey,
   loadSelectedPlayerCharacterKey,
+  pickRandomPlayerCharacterKey,
   PLAYER_CHARACTER_ROSTER,
   saveSelectedPlayerCharacterKey,
 } from "../src/theme/playerRoster.js";
@@ -43,5 +44,11 @@ describe("player roster", () => {
     const dataUrl = buildPlayerCharacterSheetDataUrl("apple");
     expect(dataUrl.startsWith("data:image/svg+xml;charset=utf-8,")).toBe(true);
     expect(decodeURIComponent(dataUrl)).toContain("#ff8a76");
+  });
+
+  it("can pick a random roster entry that excludes the selected character", () => {
+    expect(pickRandomPlayerCharacterKey("pear", 0)).toBe("strawberry");
+    expect(pickRandomPlayerCharacterKey("pear", 0.999)).toBe("apple");
+    expect(pickRandomPlayerCharacterKey("banana", 0.6)).not.toBe("banana");
   });
 });
