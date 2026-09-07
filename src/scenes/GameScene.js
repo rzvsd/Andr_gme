@@ -133,6 +133,9 @@ export class GameScene {
     this.loadedPlayerCharacterKey = null;
     this.runStartedAtMs = 0;
     this.elapsedMs = 0;
+    // M12: pause compensation — stamped when leaving for pause, applied on resume
+    // so the run timer excludes time spent paused.
+    this.pausedAtMs = 0;
     this.playerAnimator = new Animator({ idle: { frames: [0], fps: 4, loop: true }, run: { frames: [1], fps: 8, loop: true }, jump: { frames: [2], fps: 8, loop: true }, fall: { frames: [3], fps: 8, loop: true } }, "idle");
   }
 
@@ -154,6 +157,10 @@ export class GameScene {
     }
     if (!this.preloadPromise) this.preloadPromise = this.preloadAssets();
     if (!this.player || payload.restart === true) this.resetRun(game);
+    if (payload.resume === true && this.pausedAtMs > 0 && this.runStartedAtMs > 0) {
+      this.runStartedAtMs += Math.max(0, nowMs() - this.pausedAtMs);
+    }
+    this.pausedAtMs = 0;
     if (this.player) {
       this.player.characterKey = this.playerCharacterKey;
     }
@@ -242,6 +249,7 @@ export class GameScene {
     this.systemContext.enemyPool = this.enemyPool;
     this.runStartedAtMs = nowMs();
     this.elapsedMs = 0;
+    this.pausedAtMs = 0;
     this.pauseRequested = false;
   }
 
@@ -382,6 +390,7 @@ export class GameScene {
 
     if (this.pauseRequested) {
       this.pauseRequested = false;
+      this.pausedAtMs = nowMs();
       emit(game.eventBus, "ui_click", { source: "pause" });
       game.switchScene("pause", { resume: true });
       return;
@@ -626,7 +635,9 @@ export class GameScene {
 
   renderActorSprite(ctx, camera, entity, spriteSheet, frameIndex, scale, outlineColor) {
     if (!entity || entity.active === false || !camera) return;
-    void outlineColor;
+    // M15: restored BUG-024 outline — stroke in the same transform as the sprite
+    // so flipped actors keep their outline aligned.
+    const stroke = typeof outlineColor === "string" && outlineColor.length > 0 ? outlineColor : null;
     const visualScale = Math.max(1, Number(scale) || 1);
     const drawWidth = Math.max(1, Math.round(entity.width * visualScale));
     const drawHeight = Math.max(1, Math.round(entity.height * visualScale));
@@ -645,8 +656,18 @@ export class GameScene {
       ctx.translate(projected.x + drawWidth, projected.y);
       ctx.scale(-1, 1);
       spriteSheet?.drawFrame(ctx, 0, 0, frameIndex, drawWidth, drawHeight);
+      if (stroke) {
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = stroke;
+        ctx.strokeRect(1.5, 1.5, drawWidth - 3, drawHeight - 3);
+      }
     } else {
       spriteSheet?.drawFrame(ctx, projected.x, projected.y, frameIndex, drawWidth, drawHeight);
+      if (stroke) {
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = stroke;
+        ctx.strokeRect(projected.x + 1.5, projected.y + 1.5, drawWidth - 3, drawHeight - 3);
+      }
     }
     ctx.restore();
   }

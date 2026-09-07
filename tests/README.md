@@ -1,26 +1,41 @@
 # 🧪 tests/
 
-Game integration and unit tests.
+Unit + behavioral tests (Vitest). 15 files, 50 tests.
 
-## Test Strategy
+## What Is Covered
 
-| Type | What | How |
-|---|---|---|
-| Unit | Math utils, pool, storage | Direct function calls, assert outputs |
-| Unit | Physics calculations | Test gravity, friction, collision detection |
-| Unit | Entity behavior | Test player movement, enemy AI decisions |
-| Integration | Scene transitions | Test menu → game → pause → game over flow |
-| Visual | Rendering | Manual browser inspection |
-| E2E | Full gameplay | Play in browser, verify all systems work |
+| File | Covers |
+|---|---|
+| `gameCore.test.js` | `Game` construction, scene register/switch, `scene:switch` payloads, `Menu -> game -> pause -> game` resume flow, `EventBus` decoupling |
+| `gamePauseTimer.test.js` | M12 regression: pause time excluded from run timer; `resetRun` clears compensation |
+| `versusInput.test.js` | Keyboard maps per player, 2-finger touch, steering promote on release, tap-shoot, swipe-jump, dead zone |
+| `scoreSpawn.test.js` | `ScoreSystem` kills/dodges/waves/fatal hits; `SpawnSystem` wave scaling + boss wave + cleared detection |
+| `audioPools.test.js` | `AudioManager` no-throw guards without audio hardware, mute gating, `ObjectPool` reuse + double-release safety |
+| `versusArena.test.js` | Fixed duel layout, spawn placement, bullet-range diagnostics, ring-out flow |
+| `versusCollisionSystem.test.js` | Platform grounding masks, bullet-vs-platform blocking |
+| `versusBotController.test.js` | Bot decisions |
+| `physicsSystem.test.js` | Gravity/friction integration |
+| `playerRoster.test.js` | Roster integrity, persistence, sheet generation |
+| `settings/storage/background/camera/versusMatchMode` | Config, persistence, rendering helpers |
 
 ## Running Tests
 
 ```bash
-npm run test          # Run unit tests via Vitest
-npm run test:watch    # Watch mode
+npm test            # Single run (CI gate)
+npm run test:watch  # Watch mode
 ```
 
-## File Convention
+## Conventions
 
-- `test_{module}.js` — tests for a specific module
-- Example: `test_physics.js`, `test_pool.js`, `test_collision.js`
+- Files are named `<area>.test.js` and colocated here.
+- Headless-safe: tests never touch real canvas/DOM. `Game` tests install
+  `HTMLCanvasElement`/`window`/`localStorage` mocks in `beforeEach`.
+- Sprite/audio hardware is absent in Node — tests assert graceful fallback,
+  never real playback or image decode.
+
+## What Stays Manual
+
+- Visual parity vs `project overview/game pictures/expectation.png` (eyeball check).
+- Touch feel on a real phone (zones, swipe-jump, tap-shoot).
+- Frame rate on low-end Android WebView (target 60 FPS).
+- Full APK install + playthrough via `npx cap open android`.
