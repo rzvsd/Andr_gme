@@ -17,7 +17,7 @@ let zoomIndex = 0;
 let PX = ZOOMS[0].px;
 let VIEW_W = DESIGN_BOX.width / PX;
 let VIEW_H = DESIGN_BOX.height / PX;
-const RUN = 7, WALK = 2.6, ACCEL = 45, GRAVITY = 30, JUMP = 11, CLIMB = 5;
+const RUN = 7, WALK = 2.6, ACCEL = 45, GRAVITY = 30, JUMP = 12.5, CLIMB = 5;
 const BODY_H = 1.9, BODY_HALF = 0.55;
 const HEROES = [PUDD, CHONK, NINJA];
 const TEAM = [COLORS.p1, COLORS.p2];
@@ -312,8 +312,18 @@ function igniteFlare(x, y) {
   flares.push({ x, y, t: w.lightSeconds, light, mesh });
   sound(x, y, "shot", null, true);
 }
-const floorUnder = (x, y) => FLOORS.find((s) => Math.abs(s.y - y) < 0.02 && x >= s.x0 - 0.3 && x <= s.x1 + 0.3);
-const landing = (x, prevY, y) => FLOORS.find((s) => prevY >= s.y && y <= s.y && x >= s.x0 - 0.3 && x <= s.x1 + 0.3);
+// A fighter stands on floors and on crate tops. Crate sides are solid.
+const SURFACES = [...FLOORS, ...crateBoxes.map((c) => ({ y: c.y1, x0: c.x0, x1: c.x1 }))];
+const floorUnder = (x, y) => SURFACES.find((s) => Math.abs(s.y - y) < 0.02 && x >= s.x0 - 0.3 && x <= s.x1 + 0.3);
+const landing = (x, prevY, y) => SURFACES.find((s) => prevY >= s.y && y <= s.y && x >= s.x0 - 0.3 && x <= s.x1 + 0.3);
+const CRATE_PAD = 0.45;
+function crateStop(f, prevX) {
+  const c = crateBoxes.find((b) => f.y < b.y1 - 0.05 && f.y + BODY_H > b.y0 && f.x > b.x0 - CRATE_PAD && f.x < b.x1 + CRATE_PAD);
+  if (!c) return false;
+  f.x = prevX < (c.x0 + c.x1) / 2 ? c.x0 - CRATE_PAD : c.x1 + CRATE_PAD;
+  f.vx = 0;
+  return true;
+}
 
 // ---------- input ----------
 const keys = new Set();
@@ -412,6 +422,7 @@ function botInput(f, dt) {
   const seg = floorUnder(f.x, f.y);
   if (seg && f.x < seg.x0 + 1.4) bot.dir = 1;
   if (seg && f.x > seg.x1 - 1.4) bot.dir = -1;
+  if (f.blocked) bot.dir = -bot.dir;
   bot.think -= dt;
   if (bot.think <= 0) {
     bot.think = 1;
@@ -503,7 +514,9 @@ function updateFighter(f, input, dt) {
       f.alive.onJump();
     }
     const prevY = f.y;
+    const prevX = f.x;
     f.x = THREE.MathUtils.clamp(f.x + f.vx * dt, -TOWER.half + 0.6, TOWER.half - 0.6);
+    f.blocked = crateStop(f, prevX);
     if (f.onGround) {
       if (!floorUnder(f.x, f.y)) f.onGround = false;
     } else {
