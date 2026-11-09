@@ -1,5 +1,8 @@
 ﻿# Agent State
 
+> Since 2026-10-30 the live status is `harness/PROGRESS.md` (tasks in `harness/TASKS.md`,
+> scope in `harness/PRD.md`). This file is the milestone history up to M18.
+
 ## Current Milestone
 - `Milestone`: Hardening M10–M18 (CI, pause timer, outline, untracked output, behavioral tests, docs, audio cleanup, scene split)
 - `Branch`: `test`

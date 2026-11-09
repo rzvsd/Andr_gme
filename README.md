@@ -22,9 +22,13 @@ npx cap sync       # Sync to Android
 npx cap open android  # Open in Android Studio
 ```
 
+Release APK and signing: see `docs/RELEASE.md`.
+
 ## Game Concept
 
-Two warriors face off on platforms. Bullets fly from all directions. Dodge, jump, shoot — last one standing wins. Progressive waves increase difficulty with faster bullets, smarter AI, and tighter arenas.
+Two fighters, two bridges, a pitch-black arena. Nobody can see anybody: you show for a split
+second when you fire and for half a second when you are hit. Local two-player on one phone or
+Human vs Bot. First to 5 kills wins. Full rules: `docs/GAME_DESIGN.md`.
 
 ## Project Structure
 

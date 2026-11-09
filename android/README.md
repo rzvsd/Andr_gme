@@ -16,14 +16,30 @@ npx cap open android  # Open in Android Studio
 
 ## Android-Specific Config
 
-- **Min SDK:** 24 (Android 7.0)
-- **Target SDK:** 34 (Android 14)
-- **Orientation:** Landscape locked
-- **Fullscreen:** Yes (immersive mode, hide status bar)
-- **WebView Performance:** Hardware acceleration enabled
+- **Min SDK:** 23 (Android 6.0); **Target SDK:** 35 (see `variables.gradle`)
+- **Orientation:** `sensorLandscape` (both landscape directions, never portrait)
+- **Fullscreen:** immersive. `MainActivity` hides status and navigation bars with
+  `WindowInsetsControllerCompat` (swipe shows them briefly) and draws into the
+  display cutout (`values-v27/styles.xml`).
+- **Hardware back key:** `MainActivity.onBackPressed` dispatches a synthetic
+  `Escape` keydown/keyup on `window` instead of finishing the activity. The game
+  treats Escape as "arm exit, press again to quit to menu" during a match.
+- **Icon and splash:** dark arena colour `#05060a` (also `backgroundColor` in
+  `capacitor.config.json`). Launcher icons, adaptive foreground and all `splash.png`
+  files are generated PNGs (two crossing bullet slugs, P1 red / P2 blue).
+
+## Build a debug APK
+
+```bash
+npm run build && npx cap sync android
+cd android && ./gradlew assembleDebug      # JAVA_HOME = Android Studio's jbr if java is missing
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n com.andr.gme/.MainActivity
+```
 
 ## Files You May Edit
 
-- `app/src/main/AndroidManifest.xml` — permissions, orientation, fullscreen
-- `app/src/main/res/values/styles.xml` — splash screen theme
-- `app/src/main/res/mipmap-*` — app icon (all densities)
+- `app/src/main/java/com/andr/gme/MainActivity.java` — fullscreen, back key
+- `app/src/main/AndroidManifest.xml` — permissions, orientation
+- `app/src/main/res/values*/styles.xml` — splash and cutout theme
+- `app/src/main/res/mipmap-*`, `drawable*/splash.png` — icon and splash (all densities)

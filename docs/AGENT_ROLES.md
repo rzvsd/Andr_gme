@@ -38,21 +38,14 @@ import { EventBus } from '../core/EventBus.js';
 **Delivers:**
 - `Entity.js` — Base class (position, velocity, bounds, active flag)
 - `Player.js` — Player character with movement, jump, shoot
-- `Enemy.js` — Enemy base with types (Grunt, Sniper, Rusher, Tank, Boss)
 - `Bullet.js` — Projectile with direction, speed, owner
 - `Platform.js` — Static rectangular collision body
 - `PhysicsSystem.js` — Applies physics to all entities per frame
-- `CollisionSystem.js` — AABB detection, resolution, events
-- `AISystem.js` — Enemy decision-making per frame
-- `SpawnSystem.js` — Wave management, enemy/bullet spawning
-- `ScoreSystem.js` — Tracks kills, dodges, waves, score
 
 **Interfaces Exported:**
 ```javascript
 import { Player } from '../entities/Player.js';
-import { Enemy } from '../entities/Enemy.js';
 import { Bullet } from '../entities/Bullet.js';
-import { ScoreSystem } from '../systems/ScoreSystem.js';
 ```
 
 **Dependencies:** `src/core/`, `src/config/`, `src/utils/`
@@ -66,14 +59,12 @@ import { ScoreSystem } from '../systems/ScoreSystem.js';
 - `SpriteSheet.js` — Load and slice sprite sheets into frames
 - `Animator.js` — Frame-based animation controller (play, loop, stop)
 - `ParticleEmitter.js` — Lightweight particle system (explosions, smoke)
-- `Background.js` — Parallax scrolling background layers
 
 **Interfaces Exported:**
 ```javascript
 import { SpriteSheet } from '../rendering/SpriteSheet.js';
 import { Animator } from '../rendering/Animator.js';
 import { ParticleEmitter } from '../rendering/ParticleEmitter.js';
-import { Background } from '../rendering/Background.js';
 ```
 
 **Dependencies:** `src/core/Camera.js`, `src/config/`
@@ -84,19 +75,12 @@ import { Background } from '../rendering/Background.js';
 **Owns:** `src/ui/` + `src/scenes/`  
 **Priority:** THIRD (needs entities + rendering)  
 **Delivers:**
-- `HUD.js` — In-game stats overlay (kills, dodges, wave, score)
-- `Button.js` — Touch-responsive button component
-- `Joystick.js` — Virtual analog joystick for movement
-- `ScoreBoard.js` — End-game score display
 - `MenuScene.js` — Title screen with Play/Settings/Scores
-- `GameScene.js` — Main gameplay orchestrator
-- `PauseScene.js` — Pause overlay
 - `GameOverScene.js` — Death/retry screen
 
 **Interfaces Exported:**
 ```javascript
 import { MenuScene } from '../scenes/MenuScene.js';
-import { GameScene } from '../scenes/GameScene.js';
 // Scenes registered with Game.sceneManager
 ```
 
@@ -137,7 +121,7 @@ import { MusicManager } from '../audio/MusicManager.js';
 ---
 
 ### 🖼️ Agent 7: Art & Assets
-**Owns:** `public/sprites/`, `public/audio/`, `public/fonts/`, `public/levels/`  
+**Owns:** `public/audio/`, `public/fonts/`, `public/levels/`  
 **Priority:** PARALLEL (produces assets other agents consume)  
 **Delivers:**
 - Player sprite sheet (all animations)

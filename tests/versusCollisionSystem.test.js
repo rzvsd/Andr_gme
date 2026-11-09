@@ -7,6 +7,7 @@ import {
   VERSUS_LEFT_PLATFORM_ID,
   VERSUS_LEFT_PLATFORM_NAME,
   VERSUS_PLATFORM_TOP_COLLISION_HEIGHT,
+  VERSUS_RIGHT_PLATFORM_ID,
 } from "../src/scenes/versusArena.js";
 import { VersusCollisionSystem } from "../src/systems/VersusCollisionSystem.js";
 
@@ -55,7 +56,7 @@ describe("VersusCollisionSystem", () => {
     expect(leftPlatform.playerCollisionHeight).toBe(VERSUS_PLATFORM_TOP_COLLISION_HEIGHT);
   });
 
-  it("filters player collisions so each fighter only grounds on their own bridge", () => {
+  it("keeps each fighter on its own bridge: a fighter over the other bridge is pulled back to its own end", () => {
     const layout = calculateVersusArenaLayout();
     const [leftPlatform, rightPlatform] = createPlatformsFromLayout(layout);
     const [p1, p2] = createPlayers();
@@ -75,13 +76,34 @@ describe("VersusCollisionSystem", () => {
       bullets: [],
     });
 
-    expect(p1.onGround).toBe(false);
-    expect(p1.y).toBe(rightPlatform.y - p1.height + 3);
-    expect(p1.supportingPlatformId).toBe(null);
+    expect(p1.x).toBe(leftPlatform.x + leftPlatform.width - p1.width);
+    expect(p1.onGround).toBe(true);
+    expect(p1.supportingPlatformId).toBe(VERSUS_LEFT_PLATFORM_ID);
 
-    expect(p2.onGround).toBe(false);
-    expect(p2.y).toBe(leftPlatform.y - p2.height + 3);
-    expect(p2.supportingPlatformId).toBe(null);
+    expect(p2.x).toBe(rightPlatform.x);
+    expect(p2.onGround).toBe(true);
+    expect(p2.supportingPlatformId).toBe(VERSUS_RIGHT_PLATFORM_ID);
+  });
+
+  it("clamps each fighter inside its own bridge so nobody can walk off the end", () => {
+    const layout = calculateVersusArenaLayout();
+    const platforms = createPlatformsFromLayout(layout);
+    const [p1, p2] = createPlayers();
+    const rightBridge = layout.rightPlatform;
+
+    p2.x = rightBridge.x + rightBridge.width + 40;
+    p2.y = rightBridge.y - p2.height;
+    p2.vx = 300;
+    p1.x = layout.leftPlatform.x + 100;
+    p1.y = layout.leftPlatform.y - p1.height;
+
+    const system = new VersusCollisionSystem();
+    system.update(1 / 60, { p1, p2, players: [p1, p2], bullets: [], platforms });
+
+    expect(p2.x).toBe(rightBridge.x + rightBridge.width - p2.width);
+    expect(p2.vx).toBe(0);
+    expect(p2.onGround).toBe(true);
+    expect(p1.x).toBe(layout.leftPlatform.x + 100);
   });
 
   it("still blocks bullets on the full bridge body below the top support strip", () => {

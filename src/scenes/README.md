@@ -7,8 +7,7 @@ Each scene is a self-contained game state. Only one scene is active at a time. T
 | File | Purpose |
 |---|---|
 | `MenuScene.js` | Title screen — logo, "Play" button, settings button, high scores |
-| `GameScene.js` | Main gameplay — creates entities, runs systems, renders world + HUD |
-| `PauseScene.js` | Pause overlay — semi-transparent overlay with Resume/Restart/Menu buttons |
+| `VersusGameScene.js` | Versus match — creates fighters and systems, runs the match, owns the pause overlay |
 | `GameOverScene.js` | Death screen — final score, stats summary, Retry and Menu buttons |
 
 ## Scene Interface
@@ -27,16 +26,15 @@ class Scene {
 ## Scene Flow
 
 ```
-MenuScene ──[tap Play]──► GameScene ──[tap Pause]──► PauseScene
-                              │                          │
-                              │ [player dies]        [tap Resume]
-                              ▼                          │
-                         GameOverScene ◄─────────────────┘
-                              │
-                         [tap Retry]──► GameScene
-                         [tap Menu]──► MenuScene
+MenuScene ──[tap Play]──► VersusGameScene ──[5 kills]──► GameOverScene
+                                 │                            │
+                                 │ [Back / Esc]         [tap Rematch]──► VersusGameScene
+                                 ▼                      [tap Menu]──► MenuScene
+                        VersusPauseOverlay (overlay, not a scene)
+                          [tap Resume]──► VersusGameScene
+                          [tap Quit to Menu]──► MenuScene
 ```
 
 ## Important
 
-`GameScene` is the heavyweight — it instantiates all entities, all systems, and orchestrates the gameplay loop. All other scenes are lightweight UI screens.
+`VersusGameScene` is the heavyweight — it creates the fighters, bullets and systems, and runs the match. It splits the work across the modules in `versus/`. Pause is an overlay inside it (`src/ui/VersusPauseOverlay.js`), not a scene. All other scenes are lightweight UI screens.

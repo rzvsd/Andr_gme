@@ -1,12 +1,11 @@
 import { Game } from "./core/Game.js";
 import { loadSettings } from "./config/settings.js";
 import { MenuScene } from "./scenes/MenuScene.js";
-import { GameScene } from "./scenes/GameScene.js";
 import { VersusGameScene } from "./scenes/VersusGameScene.js";
-import { PauseScene } from "./scenes/PauseScene.js";
 import { GameOverScene } from "./scenes/GameOverScene.js";
 import { AudioManager } from "./audio/AudioManager.js";
 import { MusicManager } from "./audio/MusicManager.js";
+import { loadGameFonts } from "./theme/fonts.js";
 
 function boot() {
   const canvas = document.getElementById("game-canvas");
@@ -15,6 +14,8 @@ function boot() {
   }
 
   const game = new Game(canvas);
+  // Dev FPS overlay (A-08): http://localhost:5173/?fps=1, or triple-tap the top-left corner.
+  game.fpsOverlayVisible = new URLSearchParams(window.location.search).has("fps");
   const settings = loadSettings();
 
   const audioManager = new AudioManager(game.eventBus, {
@@ -34,12 +35,13 @@ function boot() {
   game.sceneData = {};
 
   game.registerScene("menu", new MenuScene());
-  game.registerScene("game", new GameScene());
   game.registerScene("versus", new VersusGameScene());
-  game.registerScene("pause", new PauseScene());
   game.registerScene("game_over", new GameOverScene());
-  game.switchScene("menu", { restart: true });
-  game.start();
+  // Bounded wait for the bundled fonts so the first frame is not drawn in a fallback face.
+  loadGameFonts(800).then(() => {
+    game.switchScene("menu", { restart: true });
+    game.start();
+  });
 
   window.addEventListener(
     "beforeunload",

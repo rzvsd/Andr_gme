@@ -6,7 +6,6 @@ All static files served directly to the browser. Organized by asset type.
 
 ```
 public/
-├── sprites/    # Character, enemy, bullet, platform sprite sheets (PNG)
 ├── audio/      # Sound effects and music (WEBM + MP3 fallback)
 ├── fonts/      # Custom game font files (WOFF2)
 └── levels/     # Level configuration JSON files

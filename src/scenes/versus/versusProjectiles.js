@@ -1,14 +1,48 @@
-import { PLAYER_BULLET_DAMAGE } from "../../config/constants.js";
+import { VERSUS_BULLET_DAMAGE, hasShot, shotClipOf, spendShot } from "./versusShots.js";
+import { TEAM_COLORS } from "../../theme/tokens.js";
 import {
+  BULLET_FX,
   BULLET_LIFETIME_MS,
   BULLET_OFFSCREEN_MARGIN,
   BULLET_SPEED,
-  PLAYER_SHOOT_Y_OFFSET,
-  TEAM_STYLES,
+  REVEAL_ON_FIRE_SECONDS,
   center,
   emit,
   nowMs,
+  shotLineY,
 } from "./versusConfig.js";
+
+// Trail ring buffer: the last `length` bullet centres (world px). Allocated once per pooled
+// bullet and reused, so firing and stepping never allocate.
+export function createTrail(length = BULLET_FX.trailLength) {
+  const size = Math.max(1, Math.floor(length));
+  return { x: new Float32Array(size), y: new Float32Array(size), head: 0, count: 0 };
+}
+
+export function resetTrail(trail) {
+  trail.head = 0;
+  trail.count = 0;
+}
+
+export function pushTrail(trail, x, y) {
+  const size = trail.x.length;
+  trail.x[trail.head] = x;
+  trail.y[trail.head] = y;
+  trail.head = (trail.head + 1) % size;
+  trail.count = Math.min(size, trail.count + 1);
+}
+
+// Position `stepsBack` steps behind the newest entry (1 = newest). Returns false past the end.
+export function trailPoint(trail, stepsBack, out) {
+  if (stepsBack < 1 || stepsBack > trail.count) {
+    return false;
+  }
+  const size = trail.x.length;
+  const index = (trail.head - stepsBack + size) % size;
+  out.x = trail.x[index];
+  out.y = trail.y[index];
+  return true;
+}
 
 export class VersusProjectiles {
   constructor(scene) {
@@ -21,7 +55,8 @@ export class VersusProjectiles {
     }
 
     const now = this.s.cachedNowMs || nowMs();
-    if (!player.canShoot(now)) {
+    const clip = shotClipOf(player);
+    if (!player.canShoot(now) || !hasShot(clip, now)) {
       return false;
     }
 
@@ -29,37 +64,36 @@ export class VersusProjectiles {
     const ownerList = ownerIndex === 0 ? this.s.p1Bullets : this.s.p2Bullets;
     const fallbackDirection = ownerIndex === 0 ? 1 : -1;
     const directionX = player.facing < 0 ? -1 : player.facing > 0 ? 1 : fallbackDirection;
-    // M2: versus bullets follow TEAM_STYLES (picture: red vs blue/yellow), not fruit roster.
-    const style = TEAM_STYLES[ownerIndex === 1 ? 1 : 0];
+    const team = TEAM_COLORS[ownerIndex === 1 ? 1 : 0];
     const from = center(player);
     const bullet = pool.acquire();
 
+    // The bullet is centred on the shot line (its x and y are the top-left corner).
     bullet.fire({
       x: from.x + directionX * 16,
-      y: from.y - PLAYER_SHOOT_Y_OFFSET,
+      y: shotLineY(player) - (Number(bullet.height) || 0) * 0.5,
       directionX,
       directionY: 0,
       speed: BULLET_SPEED,
-      damage: PLAYER_BULLET_DAMAGE,
+      damage: VERSUS_BULLET_DAMAGE,
       owner: player,
       lifetimeMs: BULLET_LIFETIME_MS,
-      color: style.bulletCore,
+      color: team.main,
       shape: "rect",
       characterKey: player.characterKey,
     });
+    if (bullet.trail) {
+      resetTrail(bullet.trail);
+    } else {
+      bullet.trail = createTrail();
+    }
 
     player.markShot(now);
+    spendShot(clip, now);
+    // Dark arena: firing gives away the shooter position.
+    this.s.playersCtl?.revealPlayer?.(ownerIndex, REVEAL_ON_FIRE_SECONDS);
     ownerList.push(bullet);
     this.s.bullets.push(bullet);
-    // Small muzzle puff in team glow color — reads like expectation.png muzzle flash.
-    this.s.effects.spawnFruitBurst(from.x + directionX * 20, from.y - PLAYER_SHOOT_Y_OFFSET, 3, [style.bulletAccent, style.bulletGlow], {
-      lifeMin: 0.08,
-      lifeMax: 0.16,
-      speedMin: 20,
-      speedMax: 60,
-      sizeMin: 1,
-      sizeMax: 2,
-    });
     emit(eventBus, "bullet_fired", { owner: ownerIndex, bullet });
     return true;
   }
@@ -139,6 +173,11 @@ export class VersusProjectiles {
         bullet.y > this.s.deathY + BULLET_OFFSCREEN_MARGIN
       ) {
         bullet.deactivate();
+        continue;
+      }
+
+      if (bullet.trail) {
+        pushTrail(bullet.trail, bullet.x + bullet.width * 0.5, bullet.y + bullet.height * 0.5);
       }
     }
   }

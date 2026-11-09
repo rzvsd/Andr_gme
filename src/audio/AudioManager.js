@@ -1,65 +1,78 @@
 import {
   canUseHtmlAudio,
   clampVolume,
-  resolveAliasedDefinition,
-  resolveAudioSource,
+  getSharedAudioContext,
+  resumeAudioContext,
   unlockAudioProbe,
 } from "./audioUtils.js";
+import { SFX, createSfxBus } from "./synthAudio.js";
 
 const DEFAULT_EVENT_SOUND_MAP = Object.freeze({
-  bullet_fired: "sfx_shoot",
-  player_hit: "sfx_hit",
-  enemy_killed: "sfx_explosion",
-  bullet_dodged: "sfx_whoosh",
-  wave_cleared: "sfx_fanfare",
-  ui_click: "sfx_click",
-  versus_player_hit: "sfx_hit",
-  versus_dodge: "sfx_whoosh",
-  versus_kill: "sfx_explosion",
+  bullet_fired: "shoot",
+  player_hit: "hit",
+  enemy_killed: "kill",
+  bullet_dodged: "dodge",
+  wave_cleared: "kill",
+  ui_click: "click",
+  jump: "jump",
+  versus_player_hit: "hit",
+  versus_dodge: "dodge",
+  versus_kill: "kill",
 });
 
-const SYNTH_PRESETS = Object.freeze({
-  sfx_shoot: { type: "square", from: 880, to: 220, duration: 0.09, gain: 0.18 },
-  pew: { type: "square", from: 880, to: 220, duration: 0.09, gain: 0.18 },
-  sfx_hit: { type: "sawtooth", from: 220, to: 60, duration: 0.14, gain: 0.25 },
-  hit: { type: "sawtooth", from: 220, to: 60, duration: 0.14, gain: 0.25 },
-  sfx_explosion: { type: "sawtooth", from: 130, to: 30, duration: 0.38, gain: 0.32 },
-  explosion: { type: "sawtooth", from: 130, to: 30, duration: 0.38, gain: 0.32 },
-  sfx_whoosh: { type: "sine", from: 320, to: 920, duration: 0.12, gain: 0.12 },
-  whoosh: { type: "sine", from: 320, to: 920, duration: 0.12, gain: 0.12 },
-  sfx_click: { type: "square", from: 1250, to: 1250, duration: 0.035, gain: 0.12 },
-  ui_click: { type: "square", from: 1250, to: 1250, duration: 0.035, gain: 0.12 },
-  sfx_jump: { type: "sine", from: 300, to: 620, duration: 0.12, gain: 0.14 },
-  jump: { type: "sine", from: 300, to: 620, duration: 0.12, gain: 0.14 },
-  sfx_fanfare: { type: "square", from: 520, to: 1040, duration: 0.22, gain: 0.16 },
-  fanfare: { type: "square", from: 520, to: 1040, duration: 0.22, gain: 0.16 },
-  sfx_death: { type: "sawtooth", from: 300, to: 40, duration: 0.3, gain: 0.28 },
-  death: { type: "sawtooth", from: 300, to: 40, duration: 0.3, gain: 0.28 },
+// Menu sound family (A-17): which ui_click sources confirm, which go back, the rest tick.
+const UI_CONFIRM_SOURCES = new Set(["play", "start_game", "resume", "pause_resume", "rematch"]);
+const UI_BACK_SOURCES = new Set(["quit", "pause_quit", "versus_exit", "menu"]);
+const UI_CLICK_DEDUPE_MS = 40;
+
+export function uiClickSound(source) {
+  if (UI_CONFIRM_SOURCES.has(source)) {
+    return "confirm";
+  }
+  if (UI_BACK_SOURCES.has(source)) {
+    return "back";
+  }
+  return null;
+}
+
+// Legacy sound names still accepted by play(name).
+const SOUND_ALIASES = Object.freeze({
+  sfx_shoot: "shoot",
+  pew: "shoot",
+  sfx_hit: "hit",
+  sfx_explosion: "kill",
+  explosion: "kill",
+  sfx_death: "kill",
+  death: "kill",
+  sfx_fanfare: "kill",
+  fanfare: "kill",
+  sfx_whoosh: "dodge",
+  whoosh: "dodge",
+  sfx_jump: "jump",
+  sfx_click: "click",
+  ui_click: "click",
 });
 
 export class AudioManager {
   constructor(eventBus, options = {}) {
+    this.lastUiClickMs = Number.NEGATIVE_INFINITY;
     this.eventBus = eventBus ?? null;
     this.enabled = options.enabled !== false;
     this.volume = clampVolume(options.volume ?? 1);
-    this.basePath = typeof options.basePath === "string" ? options.basePath : "/audio";
-    this.maxPoolSize = Number.isFinite(options.maxPoolSize) ? Math.max(1, Math.floor(options.maxPoolSize)) : 6;
-    this.sounds = options.sounds && typeof options.sounds === "object" ? options.sounds : {};
     this.eventSoundMap = {
       ...DEFAULT_EVENT_SOUND_MAP,
       ...(options.eventSoundMap && typeof options.eventSoundMap === "object" ? options.eventSoundMap : {}),
     };
+    this.audioContextFactory =
+      typeof options.audioContextFactory === "function" ? options.audioContextFactory : getSharedAudioContext;
 
     this.subscriptions = [];
-    this.audioPools = new Map();
-    this.failedSounds = new Set();
-    this.failedSourceIndexes = new Map();
-    this.missingAssetWarnings = new Set();
-    this.pendingPlays = [];
     this.unlocked = options.unlocked === true;
     this.disposed = false;
-    this.synthContext = null;
-    this.synthWanted = true;
+    this.context = null;
+    this.masterGain = null;
+    this.sfxBus = null;
+    this.readyLogged = false;
   }
 
   subscribe() {
@@ -76,14 +89,22 @@ export class AudioManager {
       ["enemy_killed", () => this.play(this.eventSoundMap.enemy_killed)],
       ["bullet_dodged", () => this.play(this.eventSoundMap.bullet_dodged)],
       ["wave_cleared", () => this.play(this.eventSoundMap.wave_cleared)],
+      ["jump", () => this.play(this.eventSoundMap.jump)],
       ["versus:player_hit", () => this.play(this.eventSoundMap.versus_player_hit)],
       ["versus:dodge", () => this.play(this.eventSoundMap.versus_dodge)],
       ["versus:kill", () => this.play(this.eventSoundMap.versus_kill)],
       [
         "ui_click",
-        () => {
+        (payload) => {
           this.unlock();
-          this.play(this.eventSoundMap.ui_click);
+          // A control press and the action it starts can both emit ui_click in the same frame
+          // (PLAY then start_game); only the first one sounds.
+          const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+          if (now - this.lastUiClickMs < UI_CLICK_DEDUPE_MS) {
+            return;
+          }
+          this.lastUiClickMs = now;
+          this.play(uiClickSound(payload?.source) ?? this.eventSoundMap.ui_click);
         },
       ],
       ["scene:switch", () => this.unlock()],
@@ -112,14 +133,16 @@ export class AudioManager {
   }
 
   unlock() {
-    if (this.disposed || this.unlocked) {
-      this.#ensureSynthContext();
+    if (this.disposed) {
+      return;
+    }
+    if (this.unlocked) {
+      resumeAudioContext(this.context);
       return;
     }
 
     if (!canUseHtmlAudio()) {
       this.unlocked = true;
-      this.#ensureSynthContext();
       return;
     }
 
@@ -128,88 +151,50 @@ export class AudioManager {
         return;
       }
       this.unlocked = true;
-      this.#ensureSynthContext();
-      this.#flushPendingPlays();
     });
   }
 
   play(name) {
-    if (this.disposed || !this.enabled || !name) {
+    if (this.disposed || !this.enabled || !name || !this.unlocked) {
       return false;
     }
 
-    // M4: WebAudio synth first — placeholder wavs are silent, synth gives real feel.
-    // Mute/settings still gate via `enabled` + `volume`. Unlock queues until user gesture.
-    if (!this.unlocked) {
-      this.#queuePendingPlay(name);
-      return false;
-    }
-    if (this.#playSynth(name)) {
-      return true;
-    }
-
-    if (!canUseHtmlAudio()) {
+    const synth = SFX[SOUND_ALIASES[name] ?? name];
+    if (!synth) {
       return false;
     }
 
-    if (this.failedSounds.has(name)) {
+    const ctx = this.#ensureContext();
+    if (!ctx) {
       return false;
     }
 
-    if (!this.unlocked) {
-      this.#queuePendingPlay(name);
-      return false;
-    }
-
-    const pool = this.#getPool(name);
-    let audio = pool.find((item) => item.paused || item.ended);
-
-    if (!audio && pool.length < this.maxPoolSize) {
-      audio = this.#createAudio(name);
-      if (audio) {
-        pool.push(audio);
-      }
-    }
-
-    if (!audio) {
-      return false;
-    }
-
-    audio.volume = this.volume;
     try {
-      audio.currentTime = 0;
+      synth(ctx, this.sfxBus);
     } catch {
-      // Ignore seek errors for not-yet-ready media.
-    }
-
-    try {
-      const playPromise = audio.play();
-      if (playPromise && typeof playPromise.catch === "function") {
-        playPromise.catch((error) => this.#handlePlayError(name, audio, error));
-      }
-      return true;
-    } catch (error) {
-      this.#handlePlayError(name, audio, error);
       return false;
     }
+
+    if (!this.readyLogged) {
+      this.readyLogged = true;
+      console.info("[AudioManager] synth SFX ready");
+    }
+    return true;
   }
 
   setEnabled(enabled) {
     this.enabled = Boolean(enabled);
-    if (!this.enabled) {
-      this.#stopAllPooledAudio();
-    } else if (this.unlocked) {
-      this.#flushPendingPlays();
+    if (this.masterGain) {
+      // Cut running tails immediately; restore on re-enable.
+      this.masterGain.gain.value = this.enabled ? this.volume : 0;
     }
     return this.enabled;
   }
 
   setVolume(volume) {
     this.volume = clampVolume(volume);
-    for (const pool of this.audioPools.values()) {
-      for (const audio of pool) {
-        audio.volume = this.volume;
-      }
+    if (this.masterGain && this.enabled) {
+      this.masterGain.gain.value = this.volume;
     }
     return this.volume;
   }
@@ -218,182 +203,38 @@ export class AudioManager {
     if (this.disposed) return;
     this.disposed = true;
     this.unsubscribe();
-    this.#stopAllPooledAudio();
-    this.audioPools.clear();
-    this.failedSounds.clear();
-    this.failedSourceIndexes.clear();
-    this.pendingPlays = [];
-    if (this.synthContext && typeof this.synthContext.close === "function") {
+    if (this.masterGain) {
       try {
-        const result = this.synthContext.close();
-        if (result && typeof result.catch === "function") {
-          result.catch(() => {});
-        }
-      } catch {
-        // Ignore close errors.
-      }
-    }
-    this.synthContext = null;
-  }
-
-  #ensureSynthContext() {
-    if (this.disposed || !this.synthWanted || typeof window === "undefined") {
-      return null;
-    }
-    const Ctor = window.AudioContext || window.webkitAudioContext;
-    if (typeof Ctor !== "function") {
-      return null;
-    }
-    try {
-      if (!this.synthContext) {
-        this.synthContext = new Ctor();
-      }
-      if (this.synthContext.state === "suspended" && typeof this.synthContext.resume === "function") {
-        this.synthContext.resume().catch(() => {});
-      }
-      return this.synthContext;
-    } catch {
-      return null;
-    }
-  }
-
-  #playSynth(name) {
-    const preset = SYNTH_PRESETS[name];
-    if (!preset) {
-      return false;
-    }
-    const ctx = this.#ensureSynthContext();
-    if (!ctx || typeof ctx.createOscillator !== "function") {
-      return false;
-    }
-    try {
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = preset.type;
-      osc.frequency.setValueAtTime(Math.max(20, preset.from), now);
-      osc.frequency.exponentialRampToValueAtTime(Math.max(20, preset.to), now + preset.duration);
-      const peak = Math.max(0.001, preset.gain * this.volume);
-      gain.gain.setValueAtTime(peak, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + preset.duration);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + preset.duration + 0.02);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  #queuePendingPlay(name) {
-    if (this.pendingPlays.length >= 24) {
-      this.pendingPlays.shift();
-    }
-    this.pendingPlays.push(name);
-  }
-
-  #flushPendingPlays() {
-    if (!this.enabled || !this.unlocked || this.pendingPlays.length === 0) {
-      return;
-    }
-
-    const queued = this.pendingPlays.splice(0, this.pendingPlays.length);
-    for (const name of queued) {
-      this.play(name);
-    }
-  }
-
-  #getPool(name) {
-    if (!this.audioPools.has(name)) {
-      this.audioPools.set(name, []);
-    }
-    return this.audioPools.get(name);
-  }
-
-  #createAudio(name) {
-    const source = this.#resolveSource(name);
-    if (!source) {
-      this.failedSounds.add(name);
-      return null;
-    }
-
-    const audio = new Audio(source.src);
-    audio.preload = "auto";
-    audio.volume = this.volume;
-    audio.__soundName = name;
-    audio.__sourceIndex = source.index;
-
-    audio.addEventListener("error", () => {
-      this.#markSourceFailed(name, audio.__sourceIndex);
-    });
-
-    return audio;
-  }
-
-  #resolveSource(name) {
-    const failed = this.failedSourceIndexes.get(name);
-    const definition = resolveAliasedDefinition(name, this.sounds);
-    return resolveAudioSource(name, definition, this.basePath, failed);
-  }
-
-  #markSourceFailed(name, sourceIndex) {
-    if (this.failedSounds.has(name) || !Number.isInteger(sourceIndex)) {
-      return;
-    }
-
-    const failed = this.failedSourceIndexes.get(name) ?? new Set();
-    failed.add(sourceIndex);
-    this.failedSourceIndexes.set(name, failed);
-
-    const next = this.#resolveSource(name);
-    if (!next) {
-      this.failedSounds.add(name);
-      if (!this.missingAssetWarnings.has(name)) {
-        this.missingAssetWarnings.add(name);
-        console.warn(`[AudioManager] No playable sources resolved for sound "${name}".`);
-      }
-      this.#clearPool(name);
-      return;
-    }
-
-    this.#clearPool(name);
-  }
-
-  #clearPool(name) {
-    const pool = this.audioPools.get(name);
-    if (!pool) return;
-    for (const audio of pool) {
-      try {
-        audio.pause();
+        this.masterGain.disconnect();
       } catch {
         // Ignore.
       }
-      audio.src = "";
     }
-    this.audioPools.delete(name);
+    this.masterGain = null;
+    this.sfxBus = null;
+    this.context = null;
   }
 
-  #handlePlayError(name, audio, error) {
-    if (error && error.name === "NotAllowedError") {
-      this.#queuePendingPlay(name);
-      return;
+  #ensureContext() {
+    if (this.context) {
+      resumeAudioContext(this.context);
+      return this.context;
     }
-
-    const sourceIndex = audio && Number.isInteger(audio.__sourceIndex) ? audio.__sourceIndex : null;
-    this.#markSourceFailed(name, sourceIndex);
-  }
-
-  #stopAllPooledAudio() {
-    for (const pool of this.audioPools.values()) {
-      for (const audio of pool) {
-        try {
-          audio.pause();
-          audio.currentTime = 0;
-        } catch {
-          // Ignore.
-        }
-      }
+    let ctx = null;
+    try {
+      ctx = this.audioContextFactory();
+    } catch {
+      ctx = null;
     }
+    if (!ctx || typeof ctx.createGain !== "function") {
+      return null;
+    }
+    this.context = ctx;
+    this.masterGain = ctx.createGain();
+    this.masterGain.gain.value = this.enabled ? this.volume : 0;
+    this.masterGain.connect(ctx.destination);
+    this.sfxBus = createSfxBus(ctx, this.masterGain);
+    resumeAudioContext(ctx);
+    return ctx;
   }
 }

@@ -6,3 +6,15 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Claude Code personal settings
+.claude/settings.local.json
+
+# Android signing (never commit)
+*.jks
+*.keystore
+keystore.properties
+
+# Harness evidence (reports are committed; screenshots and logs stay local)
+harness/evidence/*/*
+!harness/evidence/*/report.md

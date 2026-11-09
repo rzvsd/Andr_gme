@@ -6,7 +6,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#b6c6e5">
+  <meta name="theme-color" content="#05060a">
   <title>Bullet Dodge Arena</title>
   <style>
     html,
@@ -15,7 +15,7 @@
       padding: 0;
       width: 100%;
       height: 100%;
-      background: #b6c6e5;
+      background: #05060a;
     }
 
     body {
@@ -36,10 +36,21 @@
       image-rendering: auto;
       touch-action: none;
     }
+
+    /* Hero-lab fighters render here, over the 2D game canvas. Input stays on #game-canvas. */
+    #hero-canvas {
+      position: fixed;
+      inset: 0;
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
   <canvas id="game-canvas"></canvas>
+  <canvas id="hero-canvas"></canvas>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

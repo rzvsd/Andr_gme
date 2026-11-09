@@ -1,4 +1,8 @@
-const ACTIONS = Object.freeze(["left", "right", "jump", "shoot"]);
+import { versusLevelOf } from "../scenes/versusArena.js";
+import { hasShot, shotClipOf } from "../scenes/versus/versusShots.js";
+import { attackGoal, buildCourse, hideGoal, nodeAt, routesFrom } from "./versusBotCourse.js";
+
+const ACTIONS = Object.freeze(["left", "right", "jump", "shoot", "drop"]);
 const DEFAULT_LOOKAHEAD_SECONDS = 0.52;
 const DEFAULT_LANE_TOLERANCE_Y = 24;
 const DEFAULT_SAFE_EDGE_INSET = 30;
@@ -7,7 +11,27 @@ const DEFAULT_JUMP_REPEAT_MS = 120;
 const DEFAULT_SHOOT_REPEAT_MS = 90;
 const DEFAULT_MOVE_THREAT_SECONDS = 0.18;
 const DEFAULT_JUMP_THREAT_SECONDS = 0.14;
-const DEFAULT_SHOT_RANGE_X = 680;
+// Bullets fly 1140 world px; arena v3 duels span up to about 1100.
+const DEFAULT_SHOT_RANGE_X = 1100;
+// Fire in short bursts, then reposition, so the bot doesn't stand still as a turret.
+const BURST_MIN_SHOTS = 2;
+const BURST_MAX_SHOTS = 4;
+const BURST_PAUSE_MIN_MS = 500;
+const BURST_PAUSE_MAX_MS = 1200;
+const WANDER_MIN_MS = 500;
+const WANDER_MAX_MS = 1300;
+const WANDER_RANGE = 0.4;
+const HOP_MIN_MS = 1200;
+const HOP_MAX_MS = 2800;
+// Arena v3 routes: how close (world px) counts as "there", how near a block the bot jumps to hop
+// it, how long the opponent must stay on a new level before the bot follows, and how soon a
+// bullet must hit for the bot to jump while it is on its way.
+const ROUTE_EPSILON = 6;
+const HOP_GAP = 12;
+const LEVEL_SETTLE_MS = 300;
+const ROUTE_DODGE_SECONDS = 0.2;
+// Edge inset (world px) for fighting on a segment: segments are short and blocks end them.
+const SEGMENT_EDGE_INSET = 4;
 
 function createActionFlags() {
   return {
@@ -15,6 +39,7 @@ function createActionFlags() {
     right: false,
     jump: false,
     shoot: false,
+    drop: false,
   };
 }
 
@@ -193,8 +218,23 @@ export function planVersusBotFrame(context = {}, options = {}) {
   const roomLeft = Math.max(0, toNumber(self.x, 0) - safeZone.minX);
   const roomRight = Math.max(0, safeZone.maxX - toNumber(self.x, 0));
 
+  const holdFire = context?.holdFire === true;
   let targetX = preferredCombatX;
   let reason = "center";
+
+  if (holdFire) {
+    const wanderOffset = clamp(toNumber(context?.wanderOffset, 0), -1, 1);
+    targetX = clamp(
+      preferredCombatX + wanderOffset * (safeZone.maxX - safeZone.minX) * WANDER_RANGE,
+      safeZone.minX,
+      safeZone.maxX
+    );
+    reason = "reposition";
+    if (context?.wantsHop === true && self.onGround) {
+      pressed.jump = true;
+      reason = "hop";
+    }
+  }
 
   if (threat) {
     reason = "threat";
@@ -223,7 +263,9 @@ export function planVersusBotFrame(context = {}, options = {}) {
     actions.left = true;
   }
 
-  if (!threat && inFiringLane && self.facing !== desiredFacing) {
+  if (holdFire) {
+    // Repositioning: skip the face/shoot logic so movement isn't overridden.
+  } else if (!threat && inFiringLane && self.facing !== desiredFacing) {
     if (desiredFacing < 0 && roomLeft > targetEpsilon) {
       actions.left = true;
       actions.right = false;
@@ -245,7 +287,7 @@ export function planVersusBotFrame(context = {}, options = {}) {
     reason = "attack";
   }
 
-  if (!threat && !actions.left && !actions.right && !withinSafeZone) {
+  if (!threat && !holdFire && !actions.left && !actions.right && !withinSafeZone) {
     if (toNumber(self.x, 0) < preferredCombatX) {
       actions.right = true;
       reason = "recover_right";
@@ -272,15 +314,26 @@ export function planVersusBotFrame(context = {}, options = {}) {
 export class VersusBotController {
   constructor(options = {}) {
     this.options = { ...options };
+    this.random = typeof options.random === "function" ? options.random : Math.random;
     this.actions = createActionFlags();
     this.pressed = createActionFlags();
-    this.lastJumpCommandAtMs = Number.NEGATIVE_INFINITY;
-    this.lastShootCommandAtMs = Number.NEGATIVE_INFINITY;
-    this.lastDecision = null;
+    this.reset();
     this.input = {
       isPressed: (action) => this.isPressed(action),
       consumePressed: (action) => this.consumePressed(action),
     };
+  }
+
+  // Moves the bot's absolute timers forward by `deltaMs` (the length of a pause).
+  shiftTime(deltaMs) {
+    const d = Number(deltaMs);
+    if (!(d > 0)) {
+      return;
+    }
+    this.pauseUntilMs += d;
+    this.nextWanderAtMs += d;
+    this.nextHopAtMs += d;
+    this.levelCandidateSinceMs += d;
   }
 
   reset() {
@@ -291,6 +344,19 @@ export class VersusBotController {
     this.lastJumpCommandAtMs = Number.NEGATIVE_INFINITY;
     this.lastShootCommandAtMs = Number.NEGATIVE_INFINITY;
     this.lastDecision = null;
+    this.burstShotsLeft = 0;
+    this.pauseUntilMs = Number.NEGATIVE_INFINITY;
+    this.wanderOffset = 0;
+    this.nextWanderAtMs = Number.NEGATIVE_INFINITY;
+    this.nextHopAtMs = Number.NEGATIVE_INFINITY;
+    this.opponentLevel = 0;
+    this.levelCandidate = 0;
+    this.levelCandidateSinceMs = Number.NEGATIVE_INFINITY;
+    this.airTargetX = null;
+  }
+
+  randomBetween(min, max) {
+    return min + this.random() * (max - min);
   }
 
   getPlayerInput() {
@@ -299,15 +365,50 @@ export class VersusBotController {
 
   update(_deltaSeconds, context = {}) {
     const nowMs = toNumber(context?.nowMs, 0);
+    const holdFire = nowMs < this.pauseUntilMs;
+    if (!holdFire && this.burstShotsLeft <= 0) {
+      this.burstShotsLeft = Math.round(this.randomBetween(BURST_MIN_SHOTS, BURST_MAX_SHOTS));
+    }
+    if (nowMs >= this.nextWanderAtMs) {
+      this.wanderOffset = this.randomBetween(-1, 1);
+      this.nextWanderAtMs = nowMs + this.randomBetween(WANDER_MIN_MS, WANDER_MAX_MS);
+    }
+
+    const route = this.planRoute(context, nowMs);
+    if (route?.move) {
+      this.applyDecision(route, nowMs);
+      return route;
+    }
+
     const decision = planVersusBotFrame(
       {
         ...context,
+        ...(route?.fightOn ? { ownPlatform: route.fightOn } : null),
         lastJumpCommandAtMs: this.lastJumpCommandAtMs,
         lastShootCommandAtMs: this.lastShootCommandAtMs,
+        holdFire,
+        wanderOffset: this.wanderOffset,
+        // On a segment a random hop would land on the ledge above, so routes do the jumping.
+        wantsHop: !route?.fightOn && nowMs >= this.nextHopAtMs,
       },
-      this.options
+      route?.fightOn ? { ...this.options, safeEdgeInset: SEGMENT_EDGE_INSET } : this.options
     );
 
+    if (decision.pressed.shoot) {
+      this.burstShotsLeft -= 1;
+      if (this.burstShotsLeft <= 0) {
+        this.pauseUntilMs = nowMs + this.randomBetween(BURST_PAUSE_MIN_MS, BURST_PAUSE_MAX_MS);
+      }
+    }
+    if (decision.debug.reason === "hop") {
+      this.nextHopAtMs = nowMs + this.randomBetween(HOP_MIN_MS, HOP_MAX_MS);
+    }
+
+    this.applyDecision(decision, nowMs);
+    return decision;
+  }
+
+  applyDecision(decision, nowMs) {
     for (const action of ACTIONS) {
       this.actions[action] = Boolean(decision.actions[action]);
       this.pressed[action] = Boolean(decision.pressed[action]);
@@ -321,7 +422,113 @@ export class VersusBotController {
     }
 
     this.lastDecision = decision.debug;
-    return decision;
+  }
+
+  // Arena v3: with shots left the bot climbs or drops to the opponent's level and fights from the
+  // segment nearest them; with none it hides behind a block until the clip refills. Returns
+  // { move } to steer this frame, { fightOn } for the duel logic, or null without a platform list.
+  planRoute(context, nowMs) {
+    const self = context?.self ?? null;
+    const opponent = context?.opponent ?? null;
+    const category = toNumber(context?.ownPlatform?.collisionCategory, 0);
+    if (!Array.isArray(context?.platforms) || category === 0 || !isActiveEntity(self) || !isActiveEntity(opponent)) {
+      return null;
+    }
+    if (this.courseSource !== context.platforms || this.courseSize !== context.platforms.length) {
+      this.course = buildCourse(context.platforms, category);
+      this.courseSource = context.platforms;
+      this.courseSize = context.platforms.length;
+    }
+    this.trackOpponentLevel(opponent, nowMs);
+
+    const width = toNumber(self.width, 0);
+    const centerX = toNumber(self.x, 0) + width * 0.5;
+    const opponentX = centerOf(opponent).x;
+    const opponentIsLeft = opponentX < centerX;
+    if (!self.onGround) {
+      return this.routeMove(this.airTargetX ?? centerX, centerX, "air");
+    }
+    const support = self.supportingPlatform;
+    if (support?.kind === "block") {
+      const offX = opponentIsLeft ? support.x - width * 0.5 - HOP_GAP : support.x + support.width + width * 0.5 + HOP_GAP;
+      return this.routeMove(offX, centerX, "off_block", context);
+    }
+    const here = nodeAt(this.course, self);
+    if (!here) {
+      return null;
+    }
+    const reloading = !hasShot(shotClipOf(self), nowMs);
+    const reachable = routesFrom(this.course, here, width);
+    const goal = reloading
+      ? hideGoal(this.course, reachable, here.level, opponentIsLeft)
+      : attackGoal(this.course, reachable, this.opponentLevel, opponentX);
+    const edge = goal ? reachable.get(goal) : null;
+    if (!edge) {
+      if (reloading) {
+        // Right behind the block: dark, still, and out of every standing shot on this level.
+        const coverX = opponentIsLeft ? here.minX + width * 0.5 + 2 : here.maxX - width * 0.5 - 2;
+        return this.routeMove(coverX, centerX, "hide", context);
+      }
+      return { fightOn: { x: here.minX, y: here.support.y, width: here.maxX - here.minX, height: here.support.height } };
+    }
+
+    const route = this.routeMove(edge.x, centerX, edge.type, context);
+    const ready = Math.abs(edge.x - centerX) <= ROUTE_EPSILON;
+    if (edge.type === "climb" && ready) {
+      route.pressed.jump = true;
+      this.airTargetX = (edge.to.minX + edge.to.maxX) * 0.5;
+    } else if (edge.type === "leap") {
+      const toRight = edge.to.minX >= here.maxX;
+      const lead = toRight ? edge.edgeX - (centerX + width * 0.5) : centerX - width * 0.5 - edge.edgeX;
+      if (lead <= ROUTE_EPSILON) {
+        route.pressed.jump = true;
+        this.airTargetX = edge.x;
+      }
+    } else if (edge.type === "drop" && ready) {
+      route.pressed.drop = true;
+      route.pressed.jump = false;
+      this.airTargetX = centerX;
+    } else if (edge.type === "hop") {
+      const ahead = edge.to.minX >= here.maxX;
+      const gap = ahead ? here.maxX - (centerX + width * 0.5) : centerX - width * 0.5 - here.minX;
+      if (gap <= HOP_GAP) {
+        route.pressed.jump = true;
+        this.airTargetX = edge.x;
+      }
+    }
+    return route;
+  }
+
+  // Steer toward a body-centre x. Jumps away from a bullet about to hit, unless already in the air.
+  routeMove(targetX, centerX, reason, context = null) {
+    const actions = createActionFlags();
+    const pressed = createActionFlags();
+    if (centerX < targetX - ROUTE_EPSILON) {
+      actions.right = true;
+    } else if (centerX > targetX + ROUTE_EPSILON) {
+      actions.left = true;
+    }
+    const threat = context ? findIncomingThreat(context.self, context.bullets) : null;
+    if (threat && threat.timeToImpact <= ROUTE_DODGE_SECONDS) {
+      pressed.jump = true;
+    }
+    return { move: true, actions, pressed, debug: { reason: `route_${reason}` } };
+  }
+
+  // The level the opponent stands on, once they have stayed there LEVEL_SETTLE_MS.
+  trackOpponentLevel(opponent, nowMs) {
+    if (!opponent.onGround || !opponent.supportingPlatform) {
+      return;
+    }
+    const level = versusLevelOf(opponent.supportingPlatform);
+    if (level === this.opponentLevel || level !== this.levelCandidate) {
+      this.levelCandidate = level;
+      this.levelCandidateSinceMs = nowMs;
+      return;
+    }
+    if (nowMs - this.levelCandidateSinceMs >= LEVEL_SETTLE_MS) {
+      this.opponentLevel = level;
+    }
   }
 
   isPressed(action) {

@@ -43,6 +43,10 @@ export class Game {
     this.currentScene = null;
     this.sceneData = {};
     this.debugOverlayVisible = false;
+    // Dev FPS overlay (A-08): on with ?fps=1 or a triple tap in the top-left corner.
+    this.fpsOverlayVisible = false;
+    this.fps = { frames: 0, windowStartMs: 0, current: 0, samples: 0, sum: 0, worst: Infinity, lastLogMs: 0 };
+    this.fpsTapTimesMs = [];
 
     this.loop = this.loop.bind(this);
     this.handleResize = this.handleResize.bind(this);
@@ -195,6 +199,7 @@ export class Game {
 
     this.lastTime = now;
     this.accumulator += frameTime;
+    this.trackFps(now);
 
     // M5: cap catch-up steps — slow frames drop time instead of spiralling (max 5 x 16.6ms).
     let steps = 0;
@@ -270,6 +275,76 @@ export class Game {
     if (this.debugOverlayVisible) {
       this.renderDebugOverlay();
     }
+    if (this.fpsOverlayVisible) {
+      this.renderFpsOverlay();
+    }
+  }
+
+  trackFps(nowMs) {
+    const fps = this.fps;
+    fps.frames += 1;
+    if (fps.windowStartMs === 0) {
+      fps.windowStartMs = nowMs;
+      return;
+    }
+    const elapsed = nowMs - fps.windowStartMs;
+    if (elapsed < 1000) {
+      return;
+    }
+    fps.current = (fps.frames * 1000) / elapsed;
+    fps.samples += 1;
+    fps.sum += fps.current;
+    fps.worst = Math.min(fps.worst, fps.current);
+    fps.frames = 0;
+    fps.windowStartMs = nowMs;
+    // One log line per 30 s while the overlay is on, so adb logcat can read it on a device.
+    if (this.fpsOverlayVisible && nowMs - fps.lastLogMs >= 30000) {
+      fps.lastLogMs = nowMs;
+      console.info(`[FPS] current=${fps.current.toFixed(1)} avg=${this.getAverageFps().toFixed(1)} worst=${fps.worst.toFixed(1)} scene=${this.currentSceneName ?? "unknown"}`);
+    }
+  }
+
+  getAverageFps() {
+    return this.fps.samples > 0 ? this.fps.sum / this.fps.samples : 0;
+  }
+
+  resetFpsStats() {
+    this.fps = { frames: 0, windowStartMs: 0, current: 0, samples: 0, sum: 0, worst: Infinity, lastLogMs: 0 };
+  }
+
+  // Three taps within 1.2 s in the top-left 90x90 px toggle the overlay on touch devices.
+  handleFpsTap(event) {
+    const x = Number(event?.clientX);
+    const y = Number(event?.clientY);
+    if (!(x >= 0 && x <= 90 && y >= 0 && y <= 90)) {
+      return;
+    }
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    this.fpsTapTimesMs = this.fpsTapTimesMs.filter((t) => now - t <= 1200);
+    this.fpsTapTimesMs.push(now);
+    if (this.fpsTapTimesMs.length >= 3) {
+      this.fpsTapTimesMs = [];
+      this.fpsOverlayVisible = !this.fpsOverlayVisible;
+      this.resetFpsStats();
+    }
+  }
+
+  renderFpsOverlay() {
+    const fps = this.fps;
+    const worst = Number.isFinite(fps.worst) ? fps.worst : 0;
+    const label = `FPS ${fps.current.toFixed(0)}  avg ${this.getAverageFps().toFixed(0)}  min ${worst.toFixed(0)}`;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.font = "600 13px monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const width = Math.ceil(ctx.measureText(label).width) + 20;
+    const x = Math.round((this.viewWidth - width) * 0.5);
+    ctx.fillStyle = "rgba(7, 12, 18, 0.85)";
+    ctx.fillRect(x, 4, width, 22);
+    ctx.fillStyle = fps.current >= 55 ? "#9fe1cb" : fps.current >= 40 ? "#ffe29a" : "#ff8a76";
+    ctx.fillText(label, x + width * 0.5, 15);
+    ctx.restore();
   }
 
   handleDebugToggle(event) {
@@ -326,6 +401,7 @@ export class Game {
   }
 
   handlePointerDown(event) {
+    this.handleFpsTap(event);
     this.routePointerEvent("handlePointerDown", event);
   }
 

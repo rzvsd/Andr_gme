@@ -1,4 +1,14 @@
-import { HIT_FLASH_DURATION, TEAM_STYLES, center, emit, nowMs } from "./versusConfig.js";
+import { HIT_FLASH_DURATION, emit, nowMs } from "./versusConfig.js";
+
+// World centre of the killing bullet, or null when the payload carries no positioned bullet.
+function bulletCentre(bullet) {
+  const x = Number(bullet?.x);
+  const y = Number(bullet?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+  return { x: x + (Number(bullet.width) || 0) * 0.5, y: y + (Number(bullet.height) || 0) * 0.5 };
+}
 
 export class VersusMatch {
   constructor(scene) {
@@ -13,46 +23,46 @@ export class VersusMatch {
 
     this.s.eventOff.push(
       eventBus.on("versus:player_hit", (payload) => {
-        const targetIndex = this.s.playersCtl.resolvePlayerIndex(payload?.target ?? payload?.player ?? null, payload?.targetIndex);
+        const target = payload?.target ?? payload?.player ?? null;
+        const targetIndex = this.s.playersCtl.resolvePlayerIndex(target, payload?.targetIndex);
         if (targetIndex >= 0) {
           this.s.hitFlashTimers[targetIndex] = HIT_FLASH_DURATION;
         }
-        if (payload?.source !== "fall") {
-          const target = payload?.target ?? payload?.player ?? null;
-          const hitPoint = target ? center(target) : null;
-          if (hitPoint) {
-            // M2: impact palette follows the VICTIM team so hits read instantly like expectation.png.
-            const victimIndex = targetIndex >= 0 ? targetIndex : 0;
-            const palette = TEAM_STYLES[victimIndex]?.hitColors ?? ["#ffffff"];
-            this.s.effects.spawnFruitBurst(hitPoint.x, hitPoint.y, payload?.isFatal ? 14 : 8, palette, {
-              lifeMin: 0.14,
-              lifeMax: 0.32,
-              speedMin: 30,
-              speedMax: payload?.isFatal ? 130 : 80,
-              sizeMin: 1.2,
-              sizeMax: 3,
-            });
-          }
+        if (payload?.source === "fall") {
+          return;
+        }
+        const now = this.s.cachedNowMs || nowMs();
+        const dirX = Number(payload?.bullet?.directionX) || (targetIndex === 0 ? -1 : 1);
+        if (target) {
+          this.s.effects.spawnDustPuff(target.x + target.width * 0.5, target.y + target.height);
+          const slab = this.s.platforms.indexOf(target.supportingPlatform);
+          this.s.effects.flashSlab(slab >= 0 ? slab : targetIndex, now);
+        }
+        // A fatal hit gets the kill feedback from versus:kill instead.
+        if (!payload?.isFatal) {
+          this.s.effects.trigger("hit", now, dirX);
+        }
+      })
+    );
+    this.s.eventOff.push(
+      eventBus.on("versus:kill", (payload) => {
+        const shooterIndex = this.s.playersCtl.resolvePlayerIndex(payload?.killer ?? payload?.shooter ?? null, payload?.killerIndex);
+        const victimIndex = this.s.playersCtl.resolvePlayerIndex(payload?.victim ?? payload?.target ?? null, payload?.victimIndex);
+        const now = this.s.cachedNowMs || nowMs();
+        const dirX = Number(payload?.bullet?.directionX) || (shooterIndex === 1 ? -1 : 1);
+        this.s.effects.trigger("kill", now, dirX);
+        if (shooterIndex >= 0 && victimIndex >= 0) {
+          // The bullet is deactivated but not yet recycled, so its position is the impact point.
+          this.s.effects.startKillFrame(shooterIndex, victimIndex, now, bulletCentre(payload?.bullet), dirX);
         }
       })
     );
     this.s.eventOff.push(
       eventBus.on("versus:bullet_blocked", (payload) => {
-        const bullet = payload?.bullet;
-        if (!bullet) {
-          return;
+        const slab = this.s.platforms.indexOf(payload?.platform);
+        if (slab >= 0) {
+          this.s.effects.flashSlab(slab, this.s.cachedNowMs || nowMs());
         }
-        const hitPoint = center(bullet);
-        const ownerIndex = bullet?.owner === this.s.p2 ? 1 : 0;
-        const style = TEAM_STYLES[ownerIndex];
-        this.s.effects.spawnFruitBurst(hitPoint.x, hitPoint.y, 5, [style.bulletAccent, style.bulletCore, "#ffffff"], {
-          lifeMin: 0.1,
-          lifeMax: 0.22,
-          speedMin: 20,
-          speedMax: 70,
-          sizeMin: 1,
-          sizeMax: 2.2,
-        });
       })
     );
   }
@@ -64,62 +74,6 @@ export class VersusMatch {
     this.s.eventOff.length = 0;
   }
 
-  applyFallDeaths(eventBus) {
-    for (let index = 0; index < this.s.players.length; index += 1) {
-      const player = this.s.players[index];
-      if (!player || player.active === false) {
-        continue;
-      }
-      if (player.y <= this.s.deathY) {
-        continue;
-      }
-
-      this.handleRingOut(index, eventBus);
-    }
-  }
-
-  handleRingOut(playerIndex, eventBus) {
-    const target = this.s.players[playerIndex];
-    if (!target || target.active === false) {
-      return false;
-    }
-
-    const killerIndex = playerIndex === 0 ? 1 : 0;
-    const killer = this.s.players[killerIndex] ?? null;
-
-    target.deactivate();
-    target.vx = 0;
-    target.vy = 0;
-    target.onGround = false;
-    target.invulnerable = false;
-    target.moveIntent = 0;
-    target.jumpRequested = false;
-    this.s.hitFlashTimers[playerIndex] = HIT_FLASH_DURATION;
-    this.s.spawnProtectionMs[playerIndex] = 0;
-
-    emit(eventBus, "versus:player_hit", {
-      target,
-      targetIndex: playerIndex,
-      shooter: killer,
-      shooterIndex: killerIndex,
-      damage: target.maxHealth,
-      source: "fall",
-      isFatal: true,
-      death: true,
-      dead: true,
-    });
-
-    emit(eventBus, "versus:kill", {
-      killer,
-      killerIndex,
-      victim: target,
-      victimIndex: playerIndex,
-      source: "fall",
-      damage: target.maxHealth,
-    });
-
-    return true;
-  }
 
   syncHudFromRoundManager() {
     const p1Stats = this.s.roundManager?.getStats?.(0) ?? { kills: 0, deaths: 0, dodges: 0 };
@@ -190,6 +144,9 @@ export class VersusMatch {
       mode: "versus",
       sourceScene: "versus",
       matchMode: this.s.matchModeKey,
+      playerCharacterKey: this.s.playerCharacterKey,
+      player2CharacterKey: this.s.player2CharacterKey,
+      botCharacterKey: this.s.botCharacterKey,
       score: winnerKills,
       kills: winnerKills,
       deaths: winnerDeaths,

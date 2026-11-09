@@ -12,15 +12,36 @@ import {
   PLAYER_HEIGHT,
   PLAYER_HEALTH,
   PLAYER_WIDTH,
+  REVEAL_FADE_SECONDS,
+  REVEAL_ON_HIT_SECONDS,
   VERSUS_JUMP_BOOST_SPEED,
   VERSUS_JUMP_BOOST_WINDOW_MS,
   VERSUS_SPAWN_PROTECTION_MS,
   isDev,
 } from "./versusConfig.js";
+import { resetShotClip } from "./versusShots.js";
 
 export class VersusPlayers {
   constructor(scene) {
     this.s = scene;
+    // Dark arena: seconds each fighter stays visible. 0 = hidden.
+    this.revealTimers = [0, 0];
+    this.lastHitFlash = [0, 0];
+  }
+
+  revealPlayer(index, seconds) {
+    if (index !== 0 && index !== 1) {
+      return;
+    }
+    this.revealTimers[index] = Math.max(this.revealTimers[index], Math.max(0, Number(seconds) || 0));
+  }
+
+  getRevealAlpha(index) {
+    const remaining = Number(this.revealTimers[index]) || 0;
+    if (remaining <= 0) {
+      return 0;
+    }
+    return clamp(remaining / REVEAL_FADE_SECONDS, 0, 1);
   }
 
   resolvePlayerIndex(player, fallbackIndex = -1) {
@@ -83,7 +104,10 @@ export class VersusPlayers {
     player.onGround = true;
     player.moveIntent = 0;
     player.jumpRequested = false;
+    player.dropRequested = false;
+    player.dropThroughPlatform = null;
     player.lastShotAtMs = Number.NEGATIVE_INFINITY;
+    resetShotClip(player);
     player.lastGroundJumpAtMs = Number.NEGATIVE_INFINITY;
     player.jumpBoostWindowMs = VERSUS_JUMP_BOOST_WINDOW_MS;
     player.jumpBoostSpeed = VERSUS_JUMP_BOOST_SPEED;
@@ -95,6 +119,8 @@ export class VersusPlayers {
     player.supportingPlatformName = null;
     player.supportingPlatformCategory = 0;
     this.s.hitFlashTimers[index] = 0;
+    this.revealTimers[index] = 0;
+    this.lastHitFlash[index] = 0;
     // M3: brief spawn protection so fixed spawns can't be spawn-killed by in-flight bullets.
     this.s.spawnProtectionMs[index] = VERSUS_SPAWN_PROTECTION_MS;
     player.invulnerable = true;
@@ -121,7 +147,13 @@ export class VersusPlayers {
 
   updateHitFlashTimers(dt) {
     for (let index = 0; index < this.s.hitFlashTimers.length; index += 1) {
+      // A hit flash timer only ever grows when the match registers a new hit.
+      if (this.s.hitFlashTimers[index] > this.lastHitFlash[index]) {
+        this.revealPlayer(index, REVEAL_ON_HIT_SECONDS);
+      }
       this.s.hitFlashTimers[index] = Math.max(0, this.s.hitFlashTimers[index] - dt);
+      this.lastHitFlash[index] = this.s.hitFlashTimers[index];
+      this.revealTimers[index] = Math.max(0, this.revealTimers[index] - dt);
     }
   }
 

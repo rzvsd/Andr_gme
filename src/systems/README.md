@@ -7,29 +7,25 @@ Systems operate on collections of entities each frame. They contain the "verbs" 
 | File | Purpose |
 |---|---|
 | `PhysicsSystem.js` | Applies gravity, integrates velocity, applies friction to all entities |
-| `CollisionSystem.js` | Checks AABB overlaps, resolves entity-platform collisions, emits hit events |
-| `AISystem.js` | Updates enemy behavior per frame (patrol, aim, chase, shoot decisions) |
-| `SpawnSystem.js` | Manages waves — what enemies spawn, when, where. Escalates difficulty |
-| `ScoreSystem.js` | Listens to events (kills, dodges, waves) and maintains the score state |
+| `VersusCollisionSystem.js` | Grounds fighters on platforms, blocks bullets, detects hits and dodges, emits `versus:*` events |
 
 ## System Update Order
 
-Order matters! Each frame in gameplay:
+Order matters! Each frame of a versus match (`VersusGameScene.stepSimulation`):
 ```
-1. AISystem.update(dt)        — enemies decide actions
-2. PhysicsSystem.update(dt)   — apply forces & movement
-3. CollisionSystem.update(dt) — detect & resolve overlaps
-4. SpawnSystem.update(dt)     — check wave state, spawn enemies
-5. ScoreSystem.update(dt)     — tally score from events
+1. Input                            — fighters move, jump, fire (VS BOT: VersusBotController drives P2)
+2. PhysicsSystem.update(dt)         — apply forces & movement
+3. VersusCollisionSystem.update(dt) — platforms, bullet hits, dodges; emits events
+4. VersusRoundManager.update(dt)    — respawn timers (stats come from the events)
 ```
 
 ## Communication
 
 Systems communicate through **EventBus**, never by directly calling each other:
 ```javascript
-// CollisionSystem detects a hit:
-EventBus.emit('player_hit', { damage: 1 });
+// VersusCollisionSystem detects a hit:
+EventBus.emit('versus:player_hit', { shooterIndex, targetIndex, damage, isFatal });
 
-// ScoreSystem listens:
-EventBus.on('enemy_killed', (data) => { this.kills++; });
+// VersusRoundManager listens:
+EventBus.on('versus:kill', (data) => { stats[data.killerIndex].kills++; });
 ```

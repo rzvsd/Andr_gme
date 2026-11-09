@@ -18,5 +18,7 @@
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+        <!-- API 31+ system splash: dark arena colour behind the launcher icon. -->
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
     </style>
 </resources>

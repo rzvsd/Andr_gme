@@ -1,73 +1,275 @@
-﻿import * as ButtonModule from "../ui/Button.js";
+﻿// Main menu, direction A "Blackout Arena": one screen with mode, fighter select and PLAY.
+// Geometry lives in the 891 x 411 design box (tokens.js DESIGN_BOX) and is scaled uniformly to
+// the viewport; the approved mockup is harness/evidence/T-13/mockups/a-menu.html (+ .jpg states).
 import { loadSettings, saveSettings } from "../config/settings.js";
 import {
   cycleVersusMatchModeKey,
   getVersusMatchMode,
+  isVersusBotMatchMode,
   loadSelectedVersusMatchModeKey,
   saveSelectedVersusMatchModeKey,
-  VERSUS_MATCH_MODE_ROSTER,
 } from "../config/versusMatchMode.js";
-import { SpriteSheet } from "../rendering/SpriteSheet.js";
+import { HERO_RIG_HEIGHT_UNITS, heroLayer } from "./versus/versusHeroLayer.js";
 import {
-  buildPlayerCharacterSheetDataUrl,
   cyclePlayerCharacterKey,
-  getPlayerCharacterByKey,
   getPlayerCharacterByIndex,
+  getPlayerCharacterByKey,
   getPlayerCharacterIndexByKey,
+  loadSelectedPlayer2CharacterKey,
   loadSelectedPlayerCharacterKey,
-  PLAYER_CHARACTER_FRAME_SIZE,
   PLAYER_CHARACTER_ROSTER,
+  saveSelectedPlayer2CharacterKey,
   saveSelectedPlayerCharacterKey,
 } from "../theme/playerRoster.js";
 import {
-  asNumber,
-  asPointer,
-  rectContains,
-  isObject,
-  callAny,
-  pointerAliases,
-} from "./scenePointerUtils.js";
+  COLORS,
+  DESIGN_BOX,
+  HIT,
+  MOTION,
+  RADII,
+  SPACE,
+  TEAM_COLORS,
+  TYPE,
+  designBoxTransform,
+  displayFont,
+  textFont,
+  trackingPx,
+  withAlpha,
+} from "../theme/tokens.js";
+import { roundedRectPath } from "../ui/uiUtils.js";
+import { asNumber, asPointer, rectContains } from "./scenePointerUtils.js";
 
-const ButtonClass = ButtonModule.Button;
-const PREVIEW_FRAME_SEQUENCE = Object.freeze([0, 1, 2, 1, 3, 1]);
-const CARD_COLUMNS = 3;
-const CARD_ROWS = 2;
+const TAU = Math.PI * 2;
 
-function resolveIntegerSpriteSize(availableSize, maxScale = 3) {
-  const limit = Math.max(PLAYER_CHARACTER_FRAME_SIZE, Math.floor(Number(availableSize) || PLAYER_CHARACTER_FRAME_SIZE));
-  for (let scale = maxScale; scale >= 1; scale -= 1) {
-    const candidate = PLAYER_CHARACTER_FRAME_SIZE * scale;
-    if (candidate <= limit) {
-      return candidate;
-    }
+// Tap zone: the safe insets plus 16 px -> x 44..847, y 30..373.
+const TAP = Object.freeze({
+  x0: SPACE.insetX + SPACE.s4,
+  x1: DESIGN_BOX.width - SPACE.insetX - SPACE.s4,
+  y0: SPACE.insetTop + SPACE.s4,
+  y1: DESIGN_BOX.height - SPACE.insetBottom - SPACE.s4,
+});
+const CENTER_X = (TAP.x0 + TAP.x1) / 2;
+// Segmented control cells, left to right: VS BOT, VS FRIEND (mockup order).
+const MODE_ORDER = Object.freeze(["human-vs-bot", "human-vs-human"]);
+const CHIP_W = 102;
+const CHIP_H = 118;
+const CHIP_DISC = 46;
+const MINI_CHIP = 56;
+const MINI_DISC = 30;
+const COLUMN_W = PLAYER_CHARACTER_ROSTER.length * CHIP_W + (PLAYER_CHARACTER_ROSTER.length - 1) * SPACE.s3; // 444
+const SOLO_STAGE_W = 360;
+const FRIEND_STAGE_W = 248;
+const DOT_R = 3;
+const SWIPE_PX = 40;
+const RING_W = 180;
+const RING_H = 36;
+const WORDMARK_TRACK_EM = 0.32;
+const PLAY_TRACK_EM = 0.22;
+// Blur radii of the static glows (mockup box-shadow / text-shadow); see drawGlow.
+const GLOW = Object.freeze({ play: 32, chip: 24, name: 18, dot: 8 });
+// Static dust motes as design-box fractions: [x, y, radius, alpha] (mockup a-tokens.css .dust).
+const DUST = Object.freeze([
+  [0.12, 0.22, 1, 0.35], [0.24, 0.41, 1, 0.25], [0.19, 0.63, 1.5, 0.3], [0.31, 0.15, 1, 0.2],
+  [0.09, 0.52, 1, 0.22], [0.36, 0.55, 1.5, 0.18], [0.62, 0.33, 1, 0.2], [0.78, 0.58, 1, 0.22],
+  [0.86, 0.24, 1.5, 0.18],
+]);
+
+const rect = (x, y, width, height) => ({ x, y, width, height });
+const centerOf = (r) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+
+// Offscreen canvas at 1 design px per pixel; null without a DOM (unit tests), where glows are skipped.
+function createSprite(width, height) {
+  if (typeof document === "undefined" || typeof document.createElement !== "function") {
+    return null;
   }
-  return PLAYER_CHARACTER_FRAME_SIZE;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.ceil(width));
+  canvas.height = Math.max(1, Math.ceil(height));
+  const ctx = canvas.getContext?.("2d");
+  return ctx ? { canvas, ctx, width: canvas.width, height: canvas.height } : null;
+}
+
+// Design-box geometry for one view: "solo" (VS BOT, one stage) or "friend" (VS FRIEND, two stages).
+// Pure, so the touch rules can be checked in a unit test.
+export function buildMenuLayout(view) {
+  const friend = view === "friend";
+  const sound = rect(TAP.x1 - HIT.min, TAP.y0, HIT.min, HIT.min); // 799..847 x 30..78
+  const wordmark = { x: TAP.x0, y: TAP.y0 + HIT.min / 2 }; // centred on the sound button row
+  const playY = TAP.y1 - HIT.primary; // 309..373
+  const cells = (seg) => MODE_ORDER.map((key, index) => ({
+    key,
+    rect: rect(seg.x + (index * seg.width) / MODE_ORDER.length, seg.y, seg.width / MODE_ORDER.length, seg.height),
+  }));
+  const chipRow = (x, y, width, height, gap, mini) => PLAYER_CHARACTER_ROSTER.map((character, index) => ({
+    key: character.key,
+    rect: rect(x + index * (width + gap), y, width, height),
+    mini,
+  }));
+
+  if (!friend) {
+    const play = rect(TAP.x1 - COLUMN_W, playY, COLUMN_W, HIT.primary); // 403..847
+    const chipsY = play.y - SPACE.s5 - CHIP_H; // 167..285
+    const seg = rect(play.x, chipsY - SPACE.s5 - HIT.secondary, COLUMN_W, HIT.secondary); // 95..143
+    const feetY = 322;
+    const nameY = feetY + 26; // name row 324..372, chevrons centred on it
+    const stage = {
+      slot: "p1",
+      team: null,
+      facing: 1,
+      centerX: SOLO_STAGE_W / 2,
+      feetY,
+      rigHeight: 202,
+      cone: { width: 300, top: -40, bottom: 400, open: 0.38 },
+      glow: { width: 230, height: 44 },
+      tagY: null,
+      nameY,
+      chevrons: {
+        prev: rect(TAP.x0, nameY - HIT.min / 2, HIT.min, HIT.min), // 44..92
+        next: rect(SOLO_STAGE_W - SPACE.s2 - HIT.min, nameY - HIT.min / 2, HIT.min, HIT.min), // 304..352
+      },
+      dotsY: nameY + 27,
+      chips: chipRow(play.x, chipsY, CHIP_W, CHIP_H, SPACE.s3, false),
+      swipe: rect(0, 0, SOLO_STAGE_W, DESIGN_BOX.height),
+    };
+    return { view, sound, wordmark, play, seg: { rect: seg, stacked: false, cells: cells(seg) }, stages: [stage], rigHeight: stage.rigHeight };
+  }
+
+  const play = rect(Math.round(CENTER_X - 120), playY, 240, HIT.primary); // 326..566
+  const seg = rect(Math.round(CENTER_X - 150), TAP.y0, 300, HIT.secondary); // 296..596 x 30..78
+  const feetY = 246;
+  const rigHeight = 158;
+  const chipsY = play.y + (HIT.primary - MINI_CHIP) / 2; // 313..369, centred on PLAY
+  const stages = [
+    { slot: "p1", team: 0, facing: 1, x: TAP.x0 }, // column 44..292, centre 168
+    { slot: "p2", team: 1, facing: -1, x: TAP.x1 - FRIEND_STAGE_W }, // column 599..847, centre 723
+  ].map((side) => ({
+    ...side,
+    centerX: side.x + FRIEND_STAGE_W / 2,
+    feetY,
+    rigHeight,
+    cone: { width: 220, top: -40, bottom: 260, open: 0.4 },
+    glow: { width: 200, height: 40 },
+    tagY: feetY + 13,
+    nameY: feetY + 39,
+    chevrons: null,
+    dotsY: null,
+    chips: chipRow(side.x, chipsY, MINI_CHIP, MINI_CHIP, SPACE.s2, true),
+    swipe: side.slot === "p1"
+      ? rect(0, 0, side.x + FRIEND_STAGE_W + SPACE.s2, DESIGN_BOX.height)
+      : rect(side.x - SPACE.s2, 0, DESIGN_BOX.width - side.x + SPACE.s2, DESIGN_BOX.height),
+  }));
+  // No wordmark in VS FRIEND: the P1 rig stands right under it and the headband ribbons of Ninja
+  // and Vector reach up through the text (the WebGL canvas draws over the 2D canvas).
+  return { view, sound, wordmark: null, play, seg: { rect: seg, stacked: true, cells: cells(seg) }, stages, rigHeight };
+}
+
+// One frame of the MOTION.revealMs switch flicker: hero dips to 0.45, name to 0.6, an accent
+// ring grows from the feet and fades. elapsedMs >= totalMs (or anything invalid) is idle.
+export function revealFrame(elapsedMs, totalMs = MOTION.revealMs) {
+  const t = Number(elapsedMs);
+  if (!(t >= 0) || t >= totalMs) {
+    return { active: false, heroAlpha: 1, nameAlpha: 1, ringScale: 1, ringAlpha: 0 };
+  }
+  const p = t / totalMs;
+  const dip = Math.sin(Math.PI * p);
+  return {
+    active: true,
+    heroAlpha: 1 - 0.55 * dip,
+    nameAlpha: 1 - 0.4 * dip,
+    ringScale: 1 - (1 - p) ** 2,
+    ringAlpha: 0.6 * (1 - p),
+  };
+}
+
+// Caps labels: ctx.letterSpacing also trails the last glyph, so centred text shifts half a step.
+function fillCaps(ctx, text, x, y, spacingPx) {
+  const supported = "letterSpacing" in ctx;
+  if (supported) {
+    ctx.letterSpacing = `${spacingPx}px`;
+  }
+  ctx.fillText(text, ctx.textAlign === "center" ? x + spacingPx / 2 : x, y);
+  if (supported) {
+    ctx.letterSpacing = "0px";
+  }
+}
+
+// Width of a tracked caps label including the trailing step.
+function measureCaps(ctx, font, text, spacingPx) {
+  ctx.font = font;
+  const supported = "letterSpacing" in ctx;
+  if (supported) {
+    ctx.letterSpacing = `${spacingPx}px`;
+  }
+  const width = ctx.measureText(text).width;
+  if (supported) {
+    ctx.letterSpacing = "0px";
+  }
+  return supported ? width : width + spacingPx * text.length;
+}
+
+// Hero disc: body colour, hairline border, darker crescent along the bottom (mockup inset shadow).
+function drawDisc(ctx, cx, cy, radius, color, shade) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, TAU);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.clip();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, TAU);
+  ctx.moveTo(cx + radius, cy - shade);
+  ctx.arc(cx, cy - shade, radius, 0, TAU);
+  ctx.fillStyle = withAlpha(COLORS.bg, 0.25);
+  ctx.fill("evenodd");
+  ctx.restore();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, TAU);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = COLORS.line;
+  ctx.stroke();
+}
+
+// Radial gradient stretched to an ellipse; `stops` are [offset, colour] pairs.
+function fillEllipseGradient(ctx, cx, cy, rx, ry, stops, box = null) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(rx, ry);
+  const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  for (const [offset, color] of stops) {
+    gradient.addColorStop(offset, color);
+  }
+  ctx.fillStyle = gradient;
+  if (box) {
+    ctx.fillRect((box.x - cx) / rx, (box.y - cy) / ry, box.width / rx, box.height / ry);
+  } else {
+    ctx.beginPath();
+    ctx.arc(0, 0, 1, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 export class MenuScene {
   constructor() {
     this.width = 1;
     this.height = 1;
-    this.playButton = null;
-    this.soundButton = null;
-    this.musicButton = null;
-    this.prevButton = null;
-    this.nextButton = null;
-    this.characterButtons = [];
-    this.buttons = [];
-    this.activePointerId = null;
-    this.activeButton = null;
+    this.transform = designBoxTransform(this.width, this.height);
+    this.layoutBox = null;
+    this.controls = [];
+    this.pressAnim = new Map();
+    // Per pointer id, so two fingers (P1 and P2 picking at once) never drop each other's tap.
+    this.presses = new Map(); // id -> control being held
+    this.swipes = new Map(); // id -> { slot, startX, fired }
+    this.glows = new Map(); // content key -> glow sprite (see drawGlow)
     this.settings = loadSettings();
-    this.previewRect = { x: 0, y: 0, width: 0, height: 0 };
-    this.matchModeRect = { x: 0, y: 0, width: 0, height: 0 };
     this.selectedCharacterKey = loadSelectedPlayerCharacterKey();
+    this.selectedPlayer2CharacterKey = loadSelectedPlayer2CharacterKey(this.selectedCharacterKey);
     this.selectedMatchModeKey = loadSelectedVersusMatchModeKey();
-    this.previewSheets = new Map();
-    this.previewLoadPromise = null;
-    this.previewTime = 0;
+    // Elapsed ms of each stage's switch flicker; MOTION.revealMs means idle.
+    this.revealMs = { p1: MOTION.revealMs, p2: MOTION.revealMs };
     this.keyBound = false;
     this.activeGame = null;
-    this.modeButtons = [];
     this.onKeyDown = (event) => {
       const code = event?.code;
       if (code === "KeyQ") {
@@ -82,8 +284,7 @@ export class MenuScene {
         this.startSelectedCharacter(this.activeGame);
       } else if (/^Digit[1-6]$/.test(code || "")) {
         const index = Number(code.slice(-1)) - 1;
-        const character = getPlayerCharacterByIndex(index);
-        this.setSelectedCharacter(character?.key);
+        this.setSelectedCharacter(getPlayerCharacterByIndex(index)?.key);
       } else {
         return;
       }
@@ -101,79 +302,23 @@ export class MenuScene {
     this.selectedCharacterKey = getPlayerCharacterByKey(
       payload?.playerCharacterKey ?? game?.sceneData?.playerCharacterKey ?? loadSelectedPlayerCharacterKey()
     ).key;
+    // The match writes player2CharacterKey to sceneData for bot matches too (it falls back to
+    // P1's key there), so only a human-vs-human hand-back is trusted over the saved P2 pick.
+    const incomingMode = payload?.matchMode ?? game?.sceneData?.matchMode;
+    const sceneP2Key = incomingMode && !isVersusBotMatchMode(incomingMode) ? game?.sceneData?.player2CharacterKey : undefined;
+    this.selectedPlayer2CharacterKey = getPlayerCharacterByKey(
+      payload?.player2CharacterKey ?? sceneP2Key ?? loadSelectedPlayer2CharacterKey(this.selectedCharacterKey)
+    ).key;
     this.selectedMatchModeKey = getVersusMatchMode(
       payload?.matchMode ?? game?.sceneData?.matchMode ?? loadSelectedVersusMatchModeKey()
     ).key;
-
-    this.playButton = this.createButton("START DUEL", () => {
-      this.startSelectedCharacter(game);
-    });
-    this.prevButton = this.createButton("<", () => {
-      this.shiftSelection(-1);
-      game.eventBus?.emit?.("ui_click", { source: "character_prev" });
-    });
-    this.nextButton = this.createButton(">", () => {
-      this.shiftSelection(1);
-      game.eventBus?.emit?.("ui_click", { source: "character_next" });
-    });
-    this.soundButton = this.createButton("", () => {
-      this.settings = saveSettings({
-        soundEnabled: !Boolean(this.settings.soundEnabled),
-      });
-      game.audioManager?.setEnabled?.(this.settings.soundEnabled);
-      this.syncSettingsButtons();
-      game.eventBus?.emit?.("ui_click", { source: "toggle_sound" });
-    });
-    this.musicButton = this.createButton("", () => {
-      this.settings = saveSettings({
-        musicEnabled: !Boolean(this.settings.musicEnabled),
-      });
-      game.musicManager?.setEnabled?.(this.settings.musicEnabled);
-      this.syncSettingsButtons();
-      game.eventBus?.emit?.("ui_click", { source: "toggle_music" });
-    });
-    this.characterButtons = PLAYER_CHARACTER_ROSTER.map((character) => {
-      const button = this.createButton(character.name, () => {
-        this.setSelectedCharacter(character.key);
-        game.eventBus?.emit?.("ui_click", {
-          source: "character_select",
-          key: character.key,
-        });
-      });
-      button.characterKey = character.key;
-      return button;
-    });
-    this.modeButtons = VERSUS_MATCH_MODE_ROSTER.map((mode) => {
-      const button = this.createButton(mode.name, () => {
-        this.setSelectedMatchMode(mode.key);
-        game.eventBus?.emit?.("ui_click", {
-          source: "match_mode_select",
-          mode: mode.key,
-        });
-      });
-      button.matchModeKey = mode.key;
-      return button;
-    });
-
-    this.syncSettingsButtons();
-    this.buttons = [
-      ...this.modeButtons,
-      ...this.characterButtons,
-      this.playButton,
-      this.prevButton,
-      this.nextButton,
-      this.soundButton,
-      this.musicButton,
-    ];
-    this.activePointerId = null;
-    this.activeButton = null;
-    this.previewTime = 0;
-    this.ensurePreviewSheets();
-    this.onResize(
-      asNumber(game?.viewWidth, this.width),
-      asNumber(game?.viewHeight, this.height),
-      game,
-    );
+    this.revealMs = { p1: MOTION.revealMs, p2: MOTION.revealMs };
+    this.pressAnim.clear();
+    this.presses.clear();
+    this.swipes.clear();
+    this.layout();
+    heroLayer.setLightPreset("menu");
+    this.onResize(asNumber(game?.viewWidth, this.width), asNumber(game?.viewHeight, this.height), game);
 
     if (!this.keyBound && typeof window !== "undefined") {
       window.addEventListener("keydown", this.onKeyDown);
@@ -182,11 +327,13 @@ export class MenuScene {
   }
 
   onExit() {
-    this.activePointerId = null;
-    this.activeButton = null;
+    heroLayer.clear();
+    heroLayer.setLightPreset("match");
+    this.presses.clear();
+    this.swipes.clear();
     this.activeGame = null;
-    for (const button of this.buttons) {
-      this.setPressed(button, false);
+    for (const state of this.pressAnim.values()) {
+      state.pressed = false;
     }
     if (this.keyBound && typeof window !== "undefined") {
       window.removeEventListener("keydown", this.onKeyDown);
@@ -197,377 +344,547 @@ export class MenuScene {
   onResize(width, height) {
     this.width = Math.max(1, asNumber(width, 1));
     this.height = Math.max(1, asNumber(height, 1));
-
-    const sideInset = Math.max(18, this.width * 0.04);
-    const previewWidth = Math.min(420, Math.max(260, this.width * 0.42));
-    const previewHeight = Math.min(240, Math.max(176, this.height * 0.27));
-    const previewX = (this.width - previewWidth) * 0.5;
-    const previewY = Math.max(92, this.height * 0.16);
-    const arrowSize = Math.min(64, Math.max(44, previewHeight * 0.26));
-    const arrowY = previewY + (previewHeight - arrowSize) * 0.5;
-
-    this.previewRect = {
-      x: Math.round(previewX),
-      y: Math.round(previewY),
-      width: Math.round(previewWidth),
-      height: Math.round(previewHeight),
-    };
-
-    this.setButtonRect(this.prevButton, previewX + 14, arrowY, arrowSize, arrowSize);
-    this.setButtonRect(this.nextButton, previewX + previewWidth - arrowSize - 14, arrowY, arrowSize, arrowSize);
-
-    const modeGap = Math.max(12, this.width * 0.018);
-    const modeWidth = Math.round(Math.min(228, Math.max(118, (this.width - sideInset * 2 - modeGap) / 2)));
-    const modeHeight = Math.round(Math.min(58, Math.max(44, this.height * 0.064)));
-    const modeTotalWidth = modeWidth * 2 + modeGap;
-    const modeX = Math.round((this.width - modeTotalWidth) * 0.5);
-    const modeY = Math.round(previewY + previewHeight + Math.max(18, this.height * 0.024));
-
-    this.matchModeRect = {
-      x: modeX,
-      y: modeY,
-      width: modeTotalWidth,
-      height: modeHeight,
-    };
-
-    for (let index = 0; index < this.modeButtons.length; index += 1) {
-      this.setButtonRect(
-        this.modeButtons[index],
-        modeX + index * (modeWidth + modeGap),
-        modeY,
-        modeWidth,
-        modeHeight,
-      );
-    }
-
-    const cardGap = Math.max(10, this.width * 0.012);
-    const columns = CARD_COLUMNS;
-    const rows = CARD_ROWS;
-    const cardWidth = Math.round(Math.min(
-      156,
-      Math.max(88, (this.width - sideInset * 2 - cardGap * (columns - 1)) / columns),
-    ));
-    const cardHeight = Math.round(Math.min(112, Math.max(84, this.height * 0.12)));
-    const gridWidth = Math.round(columns * cardWidth + (columns - 1) * cardGap);
-    const gridHeight = Math.round(rows * cardHeight + (rows - 1) * cardGap);
-    const gridX = Math.round((this.width - gridWidth) * 0.5);
-    const gridY = Math.round(modeY + modeHeight + Math.max(18, this.height * 0.024));
-
-    for (let index = 0; index < this.characterButtons.length; index += 1) {
-      const column = index % columns;
-      const row = Math.floor(index / columns);
-      this.setButtonRect(
-        this.characterButtons[index],
-        gridX + column * (cardWidth + cardGap),
-        gridY + row * (cardHeight + cardGap),
-        cardWidth,
-        cardHeight,
-      );
-    }
-
-    const buttonWidth = Math.min(280, Math.max(190, this.width * 0.28));
-    const buttonHeight = Math.min(64, Math.max(50, this.height * 0.074));
-    const buttonX = (this.width - buttonWidth) * 0.5;
-    const buttonY = gridY + gridHeight + Math.max(18, this.height * 0.026);
-    const settingsWidth = Math.min(220, Math.max(150, this.width * 0.22));
-    const settingsHeight = Math.min(54, Math.max(42, this.height * 0.058));
-    const settingsY = buttonY + buttonHeight + Math.max(12, this.height * 0.02);
-    const settingsGap = Math.max(12, this.width * 0.02);
-
-    this.setButtonRect(this.playButton, buttonX, buttonY, buttonWidth, buttonHeight);
-    if (this.width >= 560) {
-      const total = settingsWidth * 2 + settingsGap;
-      const leftX = (this.width - total) * 0.5;
-      this.setButtonRect(this.soundButton, leftX, settingsY, settingsWidth, settingsHeight);
-      this.setButtonRect(this.musicButton, leftX + settingsWidth + settingsGap, settingsY, settingsWidth, settingsHeight);
-    } else {
-      const settingsX = (this.width - settingsWidth) * 0.5;
-      this.setButtonRect(this.soundButton, settingsX, settingsY, settingsWidth, settingsHeight);
-      this.setButtonRect(
-        this.musicButton,
-        settingsX,
-        settingsY + settingsHeight + Math.max(10, this.height * 0.015),
-        settingsWidth,
-        settingsHeight,
-      );
-    }
+    this.transform = designBoxTransform(this.width, this.height);
   }
 
-  update(dt, game) {
-    this.previewTime += Math.max(0, Number(dt) || 0);
-    for (const button of this.buttons) {
-      callAny(button, ["update"], [[dt, game], [dt], []]);
-    }
-  }
-
-  render(ctx) {
-    ctx.save();
-
-    const gradient = ctx.createLinearGradient(0, 0, 0, this.height);
-    gradient.addColorStop(0, "#13263f");
-    gradient.addColorStop(0.58, "#10243a");
-    gradient.addColorStop(1, "#08131f");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, this.width, this.height);
-
-    const glow = ctx.createRadialGradient(this.width * 0.5, this.height * 0.26, 20, this.width * 0.5, this.height * 0.26, this.width * 0.4);
-    glow.addColorStop(0, "rgba(222, 244, 180, 0.16)");
-    glow.addColorStop(1, "rgba(222, 244, 180, 0)");
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, this.width, this.height);
-
-    ctx.fillStyle = "#f8fbff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = "700 54px Arial";
-    ctx.fillText("BULLET DODGE ARENA", this.width * 0.5, Math.max(48, this.height * 0.09));
-
-    ctx.font = "400 20px Arial";
-    ctx.fillStyle = "#b9cbe8";
-    ctx.fillText("Pick duel mode + ninja, then start", this.width * 0.5, Math.max(84, this.height * 0.135));
-
-    this.renderPreviewPanel(ctx);
-    this.renderMatchModeSelector(ctx);
-    this.renderRosterCards(ctx);
-
-    this.renderButton(ctx, this.prevButton);
-    this.renderButton(ctx, this.nextButton);
-    this.renderButton(ctx, this.playButton);
-    this.renderButton(ctx, this.soundButton);
-    this.renderButton(ctx, this.musicButton);
-
-    // M4: controls hint so versus is instantly playable without a tutorial screen.
-    ctx.fillStyle = "rgba(185, 203, 232, 0.92)";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    const hintSize = this.width < 560 ? 13 : 15;
-    ctx.font = `400 ${hintSize}px Arial`;
-    const hintY = Math.min(this.height - 14, this.soundButton?.y + this.soundButton?.height + 26 || this.height - 14);
-    if (hintY > this.height * 0.5) {
-      ctx.fillText(
-        "P1: A/D move · W jump · J shoot    |    P2: ←/→ move · ↑ jump · L shoot    |    Touch: drag move · swipe up jump · tap/hold shoot",
-        this.width * 0.5,
-        hintY,
-        Math.max(0, this.width - 24),
-      );
-    }
-
-    ctx.restore();
-  }
-
-  renderPreviewPanel(ctx) {
-    const selected = getPlayerCharacterByKey(this.selectedCharacterKey);
-    const previewRect = this.previewRect;
-    const selectedIndex = getPlayerCharacterIndexByKey(selected.key);
-    const cardLabelY = previewRect.y + previewRect.height - 52;
-    const shadowSize = Math.max(26, previewRect.width * 0.15);
-    const spriteSize = resolveIntegerSpriteSize(Math.min(previewRect.height * 0.58, 168), 2);
-    const bob = Math.sin(this.previewTime * 2.4) * 4;
-    const frame = PREVIEW_FRAME_SEQUENCE[Math.floor(this.previewTime * 6) % PREVIEW_FRAME_SEQUENCE.length];
-    const spriteX = Math.round(previewRect.x + previewRect.width * 0.5 - spriteSize * 0.5);
-    const spriteY = Math.round(previewRect.y + 18 + bob);
-    const shadowY = Math.round(previewRect.y + previewRect.height - 68);
-
-    ctx.save();
-    ctx.fillStyle = "rgba(7, 18, 29, 0.58)";
-    ctx.strokeStyle = "rgba(220, 239, 255, 0.22)";
-    ctx.lineWidth = 2;
-    ctx.fillRect(previewRect.x, previewRect.y, previewRect.width, previewRect.height);
-    ctx.strokeRect(previewRect.x, previewRect.y, previewRect.width, previewRect.height);
-
-    ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
-    ctx.fillRect(previewRect.x + 12, previewRect.y + 12, previewRect.width - 24, 16);
-
-    ctx.fillStyle = "rgba(17, 27, 21, 0.34)";
-    ctx.beginPath();
-    ctx.ellipse(previewRect.x + previewRect.width * 0.5, shadowY, shadowSize, 10, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    const previewSheet = this.previewSheets.get(selected.key);
-    const drewSheet = previewSheet?.isReady?.() && previewSheet.drawFrame(ctx, spriteX, spriteY, frame, spriteSize, spriteSize);
-    if (!drewSheet) {
-      this.renderPreviewFallback(ctx, selected, spriteX, spriteY, spriteSize);
-    }
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "700 28px Arial";
-    ctx.fillText(selected.name, this.width * 0.5, cardLabelY + 12);
-
-    ctx.fillStyle = "#c8d8f5";
-    ctx.font = "600 15px Arial";
-    ctx.fillText(
-      `${selectedIndex + 1} / ${PLAYER_CHARACTER_ROSTER.length}  •  ${selected.goggles.toUpperCase()} GOGGLES`,
-      this.width * 0.5,
-      cardLabelY + 40,
-    );
-    ctx.restore();
-  }
-
-  renderPreviewFallback(ctx, character, x, y, size) {
-    // M8: ninja fallback matching the roster sheets + in-game procedural fighter.
-    const centerX = x + size * 0.5;
-    const headY = y + size * 0.34;
-    const headR = size * 0.17;
-    ctx.save();
-    ctx.fillStyle = character.bodyBottom;
-    ctx.beginPath();
-    ctx.arc(centerX, headY, headR, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = character.bodyTop;
-    ctx.beginPath();
-    ctx.arc(centerX, headY - headR * 0.25, headR * 0.95, Math.PI, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#202826";
-    ctx.fillRect(centerX - headR * 0.75, headY - headR * 0.15, headR * 1.5, headR * 0.5);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(centerX + headR * 0.1, headY - headR * 0.08, headR * 0.45, headR * 0.32);
-    ctx.strokeStyle = character.leaf;
-    ctx.lineWidth = Math.max(2, size * 0.03);
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(centerX - headR * 0.9, headY - headR * 0.55);
-    ctx.lineTo(centerX + headR * 0.9, headY - headR * 0.55);
-    ctx.moveTo(centerX - headR * 0.8, headY - headR * 0.5);
-    ctx.lineTo(centerX - headR * 1.5, headY - headR * 0.1);
-    ctx.stroke();
-    ctx.fillStyle = character.bodyTop;
-    ctx.beginPath();
-    ctx.moveTo(centerX - headR * 0.85, headY + headR * 0.7);
-    ctx.lineTo(centerX + headR * 0.85, headY + headR * 0.7);
-    ctx.lineTo(centerX + headR * 0.6, headY + headR * 1.9);
-    ctx.lineTo(centerX - headR * 0.6, headY + headR * 1.9);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-
-  renderMatchModeSelector(ctx) {
-    const selectedMode = getVersusMatchMode(this.selectedMatchModeKey);
-    const rect = this.matchModeRect;
-    if (rect.width <= 0 || rect.height <= 0) {
-      return;
-    }
-
-    ctx.save();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "alphabetic";
-    ctx.font = "700 14px Arial";
-    ctx.fillStyle = "#d7e4f7";
-    ctx.fillText("MATCH MODE", this.width * 0.5, rect.y - 12);
-
-    for (const button of this.modeButtons) {
-      this.renderMatchModeButton(ctx, button);
-    }
-
-    ctx.font = "600 13px Arial";
-    ctx.fillStyle = "#bfd0eb";
-    ctx.fillText(selectedMode.description, this.width * 0.5, rect.y + rect.height + 20);
-    ctx.restore();
-  }
-
-  renderMatchModeButton(ctx, button) {
-    const rect = this.getButtonRect(button);
-    const meta = isObject(button.__sceneButton) ? button.__sceneButton : null;
-    const pressed = Boolean(meta?.pressed);
-    const selected = button.matchModeKey === this.selectedMatchModeKey;
-    const mode = getVersusMatchMode(button.matchModeKey);
-
-    ctx.save();
-    ctx.fillStyle = selected ? "rgba(88, 129, 58, 0.34)" : "rgba(16, 28, 46, 0.78)";
-    ctx.strokeStyle = selected ? "#dff6a4" : pressed ? "#dbe6ff" : "rgba(194, 212, 240, 0.36)";
-    ctx.lineWidth = selected ? 3 : 2;
-    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
-    ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#f7fbff";
-    ctx.font = "700 16px Arial";
-    ctx.fillText(mode.name.toUpperCase(), rect.x + rect.width * 0.5, rect.y + rect.height * 0.44);
-    ctx.fillStyle = "#bfd0eb";
-    ctx.font = "600 12px Arial";
-    ctx.fillText(mode.shortLabel, rect.x + rect.width * 0.5, rect.y + rect.height * 0.72);
-    ctx.restore();
-  }
-
-  renderRosterCards(ctx) {
-    for (let index = 0; index < this.characterButtons.length; index += 1) {
-      const button = this.characterButtons[index];
-      const character = getPlayerCharacterByKey(button.characterKey);
-      const rect = this.getButtonRect(button);
-      const pressed = Boolean(button?.__sceneButton?.pressed);
-      const selected = character.key === this.selectedCharacterKey;
-      const previewSheet = this.previewSheets.get(character.key);
-      const spriteSize = resolveIntegerSpriteSize(Math.min(rect.height * 0.62, rect.width * 0.56), 1);
-      const spriteX = Math.round(rect.x + 10);
-      const spriteY = Math.round(rect.y + rect.height * 0.5 - spriteSize * 0.5 - 8);
-      const frame = selected ? 1 : 0;
-
-      ctx.save();
-      ctx.fillStyle = selected ? "rgba(102, 161, 74, 0.30)" : "rgba(16, 28, 46, 0.78)";
-      ctx.strokeStyle = selected ? "#dff6a4" : pressed ? "#dbe6ff" : "rgba(194, 212, 240, 0.36)";
-      ctx.lineWidth = selected ? 3 : 2;
-      ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
-      ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-
-      if (previewSheet?.isReady?.()) {
-        previewSheet.drawFrame(ctx, spriteX, spriteY, frame, spriteSize, spriteSize);
-      } else {
-        this.renderPreviewFallback(ctx, character, spriteX, spriteY, spriteSize);
+  // Rebuilds the design-box geometry and the tap targets for the current mode.
+  layout() {
+    const box = buildMenuLayout(isVersusBotMatchMode(this.selectedMatchModeKey) ? "solo" : "friend");
+    const controls = [
+      { id: "sound", rect: box.sound, onPress: () => this.toggleSound() },
+      ...box.seg.cells.map((cell) => ({
+        id: `mode:${cell.key}`,
+        rect: cell.rect,
+        onPress: () => this.setSelectedMatchMode(cell.key),
+      })),
+      { id: "play", rect: box.play, onPress: () => this.startSelectedCharacter(this.activeGame) },
+    ];
+    for (const stage of box.stages) {
+      for (const chip of stage.chips) {
+        controls.push({
+          id: `chip:${stage.slot}:${chip.key}`,
+          rect: chip.rect,
+          onPress: () => this.setSelectedFighter(stage.slot, chip.key),
+        });
       }
+      if (stage.chevrons) {
+        controls.push(
+          { id: "prev", rect: stage.chevrons.prev, onPress: () => this.shiftSelection(-1, stage.slot) },
+          { id: "next", rect: stage.chevrons.next, onPress: () => this.shiftSelection(1, stage.slot) },
+        );
+      }
+    }
+    this.layoutBox = box;
+    this.controls = controls;
+  }
 
-      ctx.fillStyle = "#f7fbff";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-      ctx.font = "700 16px Arial";
-      ctx.fillText(character.name.split(" ")[0].toUpperCase(), rect.x + spriteSize + 18, rect.y + rect.height * 0.44);
-      ctx.fillStyle = "#bfd0eb";
-      ctx.font = "600 12px Arial";
-      ctx.fillText(`${character.goggles.toUpperCase()} GOGGLES`, rect.x + spriteSize + 18, rect.y + rect.height * 0.68);
+  update(dt) {
+    const ms = Math.max(0, Number(dt) || 0) * 1000;
+    for (const slot of Object.keys(this.revealMs)) {
+      this.revealMs[slot] = Math.min(MOTION.revealMs, this.revealMs[slot] + ms);
+    }
+    // Press feedback: full pressScale while held and for pressMs after the touch, then ease back.
+    for (const state of this.pressAnim.values()) {
+      state.holdMs = Math.max(0, state.holdMs - ms);
+      state.pressT = state.pressed || state.holdMs > 0 ? 1 : Math.max(0, state.pressT - ms / MOTION.releaseMs);
+    }
+  }
+
+  render(ctx, _alpha, game) {
+    if (!this.layoutBox) {
+      this.layout();
+    }
+    const box = this.layoutBox;
+    const { scale, offsetX, offsetY } = this.transform;
+    const heroesLive = heroLayer.isAvailable();
+
+    ctx.save();
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(scale, scale);
+    ctx.textBaseline = "middle";
+
+    this.drawAtmosphere(ctx, box);
+    for (const stage of box.stages) {
+      this.drawStage(ctx, stage, heroesLive);
+    }
+    if (box.wordmark) {
+      this.drawWordmark(ctx, box.wordmark);
+    }
+    this.drawRoundButton(ctx, "sound", box.sound, (cx, cy) => this.drawSpeaker(ctx, cx, cy));
+    this.drawSegmented(ctx, box.seg);
+    this.drawPlay(ctx, box.play);
+    this.drawVignette(ctx);
+    ctx.restore();
+
+    if (heroesLive) {
+      heroLayer.safeRender({
+        width: this.width,
+        height: this.height,
+        dpr: Number(game?.dpr) || 1,
+        unitPx: (box.rigHeight * scale) / HERO_RIG_HEIGHT_UNITS,
+        nowMs: nowMs(),
+        actors: box.stages.map((stage) => this.heroActor(stage)),
+      });
+    }
+  }
+
+  heroActor(stage) {
+    const { scale, offsetX, offsetY } = this.transform;
+    const team = stage.team === null ? null : TEAM_COLORS[stage.team];
+    return {
+      slot: `menu-${stage.slot}`,
+      heroId: this.fighterFor(stage.slot),
+      x: offsetX + stage.centerX * scale,
+      y: offsetY + stage.feetY * scale,
+      facing: stage.facing,
+      vx: 0,
+      vy: 0,
+      onGround: true,
+      visible: true,
+      lastShotAtMs: Number.NEGATIVE_INFINITY,
+      hitFlash: 0,
+      // Friend: team rim light. Solo: a faint accent rim stands in for the mockup's mint side fill.
+      rimColor: team ? team.main : COLORS.accent,
+      rimIntensity: team ? 6 : 2.5,
+      spot: true,
+      // The layer has no alpha; dimming the rig on black reads as the mockup's 0.45 opacity dip.
+      dim: revealFrame(this.revealMs[stage.slot]).heroAlpha,
+    };
+  }
+
+  drawAtmosphere(ctx, box) {
+    // Faint structure-hue stage light so the black has value (mockup .stage-light).
+    fillEllipseGradient(ctx, DESIGN_BOX.width * 0.5, DESIGN_BOX.height * 0.4, DESIGN_BOX.width * 0.6, DESIGN_BOX.height * 0.7, [
+      [0, withAlpha(COLORS.structure, 0.08)],
+      [0.7, withAlpha(COLORS.structure, 0)],
+    ]);
+    for (const stage of box.stages) {
+      const { cone, glow } = stage;
+      const x0 = stage.centerX - cone.width / 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x0 + cone.width * cone.open, cone.top);
+      ctx.lineTo(x0 + cone.width * (1 - cone.open), cone.top);
+      ctx.lineTo(x0 + cone.width, cone.bottom);
+      ctx.lineTo(x0, cone.bottom);
+      ctx.closePath();
+      ctx.clip();
+      const light = ctx.createLinearGradient(0, cone.top, 0, cone.bottom);
+      light.addColorStop(0, withAlpha(COLORS.impact, 0.14));
+      light.addColorStop(0.55, withAlpha(COLORS.impact, 0.04));
+      light.addColorStop(0.9, withAlpha(COLORS.impact, 0));
+      ctx.fillStyle = light;
+      ctx.fillRect(x0, cone.top, cone.width, cone.bottom - cone.top);
+      ctx.restore();
+
+      const team = stage.team === null ? null : TEAM_COLORS[stage.team];
+      fillEllipseGradient(ctx, stage.centerX, stage.feetY, glow.width / 2, glow.height / 2, [
+        [0, team ? team.glow : COLORS.accentGlow],
+        [0.7, withAlpha(team ? team.main : COLORS.accent, 0)],
+      ]);
+    }
+    for (const [fx, fy, radius, alpha] of DUST) {
+      ctx.beginPath();
+      ctx.arc(fx * DESIGN_BOX.width, fy * DESIGN_BOX.height, radius, 0, TAU);
+      ctx.fillStyle = withAlpha(COLORS.impact, alpha);
+      ctx.fill();
+    }
+  }
+
+  drawVignette(ctx) {
+    const cx = DESIGN_BOX.width / 2;
+    const cy = DESIGN_BOX.height / 2;
+    fillEllipseGradient(ctx, cx, cy, cx * Math.SQRT2, cy * Math.SQRT2, [
+      [0.45, withAlpha(COLORS.bg, 0)],
+      [1, withAlpha(COLORS.bg, 0.55)],
+    ], rect(0, 0, DESIGN_BOX.width, DESIGN_BOX.height));
+  }
+
+  drawStage(ctx, stage, heroesLive) {
+    const key = this.fighterFor(stage.slot);
+    const character = getPlayerCharacterByKey(key);
+    const team = stage.team === null ? null : TEAM_COLORS[stage.team];
+    const frame = revealFrame(this.revealMs[stage.slot]);
+
+    if (!heroesLive) {
+      // No WebGL: a big hero disc stands where the rig would be.
+      const radius = stage.rigHeight * 0.3;
+      ctx.save();
+      ctx.globalAlpha = frame.heroAlpha;
+      drawDisc(ctx, stage.centerX, stage.feetY - stage.rigHeight * 0.55, radius, character.bodyTop, radius * 0.35);
       ctx.restore();
     }
+
+    if (frame.active) {
+      ctx.save();
+      ctx.globalAlpha = frame.ringAlpha;
+      ctx.strokeStyle = COLORS.accent;
+      ctx.lineWidth = 2;
+      ctx.shadowColor = COLORS.accentGlow;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.ellipse(stage.centerX, stage.feetY, (RING_W / 2) * frame.ringScale, (RING_H / 2) * frame.ringScale, 0, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.textAlign = "center";
+    if (team) {
+      ctx.font = textFont(TYPE.t2, 700);
+      ctx.fillStyle = team.main;
+      fillCaps(ctx, getVersusMatchMode(this.selectedMatchModeKey)[stage.slot === "p1" ? "p1Label" : "p2Label"], stage.centerX, stage.tagY, trackingPx(TYPE.t2));
+    }
+    ctx.globalAlpha = frame.nameAlpha;
+    const name = character.name.toUpperCase();
+    const nameFont = displayFont(TYPE.d1);
+    const nameTrack = trackingPx(TYPE.d1);
+    const nameGlow = team ? team.glow : COLORS.accentGlow;
+    const nameW = measureCaps(ctx, nameFont, name, nameTrack);
+    const nameH = TYPE.d1 * 1.5;
+    this.drawGlow(ctx, `name:${name}:${nameGlow}`, stage.centerX - nameW / 2, stage.nameY - nameH / 2, nameW, nameH, GLOW.name, nameGlow, (s) => {
+      s.font = nameFont;
+      s.textAlign = "center";
+      s.textBaseline = "middle";
+      fillCaps(s, name, nameW / 2, nameH / 2, nameTrack);
+    });
+    ctx.font = nameFont;
+    ctx.fillStyle = COLORS.text;
+    fillCaps(ctx, name, stage.centerX, stage.nameY, nameTrack);
+    ctx.restore();
+
+    if (stage.chevrons) {
+      this.drawRoundButton(ctx, "prev", stage.chevrons.prev, (cx, cy) => this.drawChevron(ctx, cx, cy, -1));
+      this.drawRoundButton(ctx, "next", stage.chevrons.next, (cx, cy) => this.drawChevron(ctx, cx, cy, 1));
+    }
+    if (stage.dotsY !== null) {
+      const selectedIndex = getPlayerCharacterIndexByKey(key);
+      const step = DOT_R * 2 + SPACE.s2;
+      const x0 = stage.centerX - ((PLAYER_CHARACTER_ROSTER.length - 1) * step) / 2;
+      for (let index = 0; index < PLAYER_CHARACTER_ROSTER.length; index += 1) {
+        const selected = index === selectedIndex;
+        const x = x0 + index * step;
+        if (selected) {
+          this.drawGlow(ctx, "dot", x - DOT_R, stage.dotsY - DOT_R, DOT_R * 2, DOT_R * 2, GLOW.dot, COLORS.accent, (s) => {
+            s.beginPath();
+            s.arc(DOT_R, DOT_R, DOT_R, 0, TAU);
+            s.fill();
+          });
+        }
+        ctx.beginPath();
+        ctx.arc(x, stage.dotsY, DOT_R, 0, TAU);
+        ctx.fillStyle = selected ? COLORS.accent : COLORS.lineStrong;
+        ctx.fill();
+      }
+    }
+    for (const chip of stage.chips) {
+      this.drawChip(ctx, stage, chip, chip.key === key);
+    }
   }
 
-  handlePointerDown(pointer, game) {
+  drawChip(ctx, stage, chip, selected) {
+    const r = chip.rect;
+    const character = getPlayerCharacterByKey(chip.key);
+    const { x: cx } = centerOf(r);
+    const radius = chip.mini ? RADII.control : RADII.panel;
+    ctx.save();
+    const pressed = this.applyPress(ctx, `chip:${stage.slot}:${chip.key}`, r) > 0;
+    if (selected) {
+      this.drawGlow(ctx, `chip:${r.width}x${r.height}`, r.x, r.y, r.width, r.height, GLOW.chip, withAlpha(COLORS.accent, 0.18), (s) => {
+        roundedRectPath(s, 0, 0, r.width, r.height, radius);
+        s.fill();
+      });
+    }
+    roundedRectPath(ctx, r.x, r.y, r.width, r.height, radius);
+    ctx.fillStyle = selected ? withAlpha(COLORS.accent, 0.08) : COLORS.surface;
+    ctx.fill();
+    if (selected) {
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = withAlpha(COLORS.accent, 0.4);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = selected ? COLORS.accent : pressed ? COLORS.lineStrong : COLORS.line;
+    ctx.stroke();
+
+    if (chip.mini) {
+      drawDisc(ctx, cx, r.y + r.height / 2, MINI_DISC / 2, character.bodyTop, 5);
+    } else {
+      // Disc + 12 gap + 12 px name = 70 of 118, so the group starts 24 down.
+      drawDisc(ctx, cx, r.y + SPACE.s5 + CHIP_DISC / 2, CHIP_DISC / 2, character.bodyTop, 8);
+      ctx.font = textFont(TYPE.t2, selected ? 700 : 600);
+      ctx.fillStyle = selected ? COLORS.text : COLORS.muted;
+      ctx.textAlign = "center";
+      fillCaps(ctx, character.name.toUpperCase(), cx, r.y + SPACE.s5 + CHIP_DISC + SPACE.s3 + TYPE.t2 / 2, trackingPx(TYPE.t2));
+    }
+    ctx.restore();
+  }
+
+  drawSegmented(ctx, seg) {
+    const r = seg.rect;
+    ctx.save();
+    roundedRectPath(ctx, r.x, r.y, r.width, r.height, RADII.control);
+    ctx.fillStyle = COLORS.surface;
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = COLORS.line;
+    ctx.stroke();
+    ctx.clip();
+
+    const labelTrack = trackingPx(TYPE.t1);
+    const subTrack = trackingPx(TYPE.t2);
+    for (const cell of seg.cells) {
+      const mode = getVersusMatchMode(cell.key);
+      const on = cell.key === this.selectedMatchModeKey;
+      const c = cell.rect;
+      const { x: cx, y: cy } = centerOf(c);
+      const label = mode.name.toUpperCase();
+      const sub = mode.subLabel.toUpperCase();
+      const labelFont = textFont(TYPE.t1, on ? 700 : 600);
+      const subFont = textFont(TYPE.t2, 700);
+
+      ctx.save();
+      this.applyPress(ctx, `mode:${cell.key}`, c);
+      if (on) {
+        ctx.fillStyle = withAlpha(COLORS.accent, 0.12);
+        ctx.fillRect(c.x, c.y, c.width, c.height);
+        ctx.fillStyle = COLORS.accent;
+        ctx.fillRect(c.x, c.y + c.height - 2, c.width, 2);
+      }
+      if (seg.stacked) {
+        // 16 + 4 + 12 = 32 of 48: label centred 16 down, sub-label 34 down.
+        ctx.textAlign = "center";
+        ctx.font = labelFont;
+        ctx.fillStyle = on ? COLORS.text : COLORS.muted;
+        fillCaps(ctx, label, cx, c.y + SPACE.s2 + TYPE.t1 / 2, labelTrack);
+        ctx.font = subFont;
+        ctx.fillStyle = COLORS.muted;
+        fillCaps(ctx, sub, cx, c.y + SPACE.s2 + TYPE.t1 + SPACE.s1 + TYPE.t2 / 2, subTrack);
+      } else {
+        const labelWidth = measureCaps(ctx, labelFont, label, labelTrack) - labelTrack;
+        const subWidth = measureCaps(ctx, subFont, sub, subTrack) - subTrack;
+        let x = cx - (labelWidth + SPACE.s2 + subWidth) / 2;
+        ctx.textAlign = "left";
+        ctx.font = labelFont;
+        ctx.fillStyle = on ? COLORS.text : COLORS.muted;
+        fillCaps(ctx, label, x, cy, labelTrack);
+        x += labelWidth + SPACE.s2;
+        ctx.font = subFont;
+        ctx.fillStyle = COLORS.muted;
+        fillCaps(ctx, sub, x, cy, subTrack);
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  drawPlay(ctx, r) {
+    const { x: cx } = centerOf(r);
+    ctx.save();
+    this.applyPress(ctx, "play", r);
+    this.drawGlow(ctx, `play:${r.width}x${r.height}`, r.x, r.y, r.width, r.height, GLOW.play, COLORS.accentGlow, (s) => {
+      roundedRectPath(s, 0, 0, r.width, r.height, RADII.control);
+      s.fill();
+    });
+    // 6 px darker base under the face (mockup box-shadow 0 6px 0).
+    roundedRectPath(ctx, r.x, r.y + 6, r.width, r.height, RADII.control);
+    ctx.fillStyle = COLORS.accent;
+    ctx.fill();
+    ctx.fillStyle = withAlpha(COLORS.accentInk, 0.3);
+    ctx.fill();
+    roundedRectPath(ctx, r.x, r.y, r.width, r.height, RADII.control);
+    ctx.fillStyle = COLORS.accent;
+    ctx.fill();
+
+    // Two lines: 24 + 4 + 12 = 40 of 64, so the block starts 12 down.
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.accentInk;
+    ctx.font = displayFont(TYPE.d2);
+    fillCaps(ctx, "PLAY", cx, r.y + SPACE.s3 + TYPE.d2 / 2, TYPE.d2 * PLAY_TRACK_EM);
+    ctx.globalAlpha = 0.75;
+    ctx.font = textFont(TYPE.t2, 700);
+    fillCaps(ctx, "FIRST TO 5 KILLS", cx, r.y + SPACE.s3 + TYPE.d2 + SPACE.s1 + TYPE.t2 / 2, trackingPx(TYPE.t2));
+    ctx.restore();
+  }
+
+  drawWordmark(ctx, wordmark) {
+    const spacing = TYPE.t2 * WORDMARK_TRACK_EM;
+    ctx.save();
+    ctx.textAlign = "left";
+    const font = displayFont(TYPE.t2);
+    const lead = "BULLET DODGE ";
+    const leadWidth = measureCaps(ctx, font, lead, spacing);
+    ctx.font = font;
+    ctx.fillStyle = COLORS.muted;
+    fillCaps(ctx, lead, wordmark.x, wordmark.y, spacing);
+    ctx.fillStyle = COLORS.text;
+    fillCaps(ctx, "ARENA", wordmark.x + leadWidth, wordmark.y, spacing);
+    ctx.restore();
+  }
+
+  // 48 px circle button (sound, chevrons); the glyph callback draws in the circle's centre.
+  drawRoundButton(ctx, id, r, drawGlyph) {
+    const { x: cx, y: cy } = centerOf(r);
+    ctx.save();
+    const pressed = this.applyPress(ctx, id, r) > 0;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r.width / 2, 0, TAU);
+    ctx.fillStyle = COLORS.surface;
+    ctx.fill();
+    ctx.lineWidth = pressed ? 2 : 1;
+    ctx.strokeStyle = pressed ? COLORS.accent : COLORS.lineStrong;
+    ctx.stroke();
+    ctx.strokeStyle = COLORS.text;
+    ctx.fillStyle = COLORS.text;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    drawGlyph(cx, cy);
+    ctx.restore();
+  }
+
+  drawChevron(ctx, cx, cy, direction) {
+    ctx.beginPath();
+    ctx.moveTo(cx - direction * 3.5, cy - 7);
+    ctx.lineTo(cx + direction * 3.5, cy);
+    ctx.lineTo(cx - direction * 3.5, cy + 7);
+    ctx.stroke();
+  }
+
+  // Speaker: body + cone, two sound waves when on, a strike-through when off.
+  drawSpeaker(ctx, cx, cy) {
+    const on = Boolean(this.settings.soundEnabled || this.settings.musicEnabled);
+    ctx.beginPath();
+    ctx.moveTo(cx - 10, cy - 4);
+    ctx.lineTo(cx - 5, cy - 4);
+    ctx.lineTo(cx + 1, cy - 9);
+    ctx.lineTo(cx + 1, cy + 9);
+    ctx.lineTo(cx - 5, cy + 4);
+    ctx.lineTo(cx - 10, cy + 4);
+    ctx.closePath();
+    ctx.fill();
+    if (on) {
+      ctx.beginPath();
+      ctx.arc(cx + 1, cy, 6, -0.9, 0.9);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx + 1, cy, 10, -0.9, 0.9);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(cx - 10, cy - 10);
+      ctx.lineTo(cx + 10, cy + 10);
+      ctx.stroke();
+    }
+  }
+
+  // Soft glow under a shape at (x, y, width, height) in design px. shadowBlur costs an offscreen
+  // blur pass, so each glow is rendered once into a sprite keyed by content and blitted after
+  // that. The sprite holds only the shadow: `paint` draws the shape (origin at its top left;
+  // only its alpha matters) one canvas width to the right, and the shadow is offset back in.
+  drawGlow(ctx, key, x, y, width, height, blur, color, paint) {
+    const pad = Math.ceil(blur * 1.5); // the blur tail reaches about 1.5 x the radius
+    let sprite = this.glows.get(key);
+    if (sprite === undefined) {
+      sprite = createSprite(width + pad * 2, height + pad * 2);
+      if (sprite) {
+        const s = sprite.ctx;
+        s.shadowColor = color;
+        s.shadowBlur = blur;
+        s.shadowOffsetX = -sprite.width;
+        s.translate(sprite.width + pad, pad);
+        paint(s);
+      }
+      this.glows.set(key, sprite);
+    }
+    if (sprite) {
+      ctx.drawImage(sprite.canvas, x - pad, y - pad, sprite.width, sprite.height);
+    }
+  }
+
+  // Scales the following drawing about the control's centre by its press amount; returns it.
+  applyPress(ctx, id, r) {
+    const pressT = this.pressAnim.get(id)?.pressT ?? 0;
+    if (pressT > 0) {
+      const { x: cx, y: cy } = centerOf(r);
+      const k = 1 - (1 - MOTION.pressScale) * pressT;
+      ctx.translate(cx, cy);
+      ctx.scale(k, k);
+      ctx.translate(-cx, -cy);
+    }
+    return pressT;
+  }
+
+  pressState(id) {
+    let state = this.pressAnim.get(id);
+    if (!state) {
+      state = { pressed: false, holdMs: 0, pressT: 0 };
+      this.pressAnim.set(id, state);
+    }
+    return state;
+  }
+
+  setPressed(control, pressed) {
+    const state = this.pressState(control.id);
+    state.pressed = pressed;
+    if (pressed) {
+      state.holdMs = MOTION.pressMs;
+    }
+  }
+
+  // Viewport CSS px -> design px.
+  toDesign(point) {
+    const { scale, offsetX, offsetY } = this.transform;
+    return { x: (point.x - offsetX) / scale, y: (point.y - offsetY) / scale, id: point.id };
+  }
+
+  handlePointerDown(pointer) {
+    const point = asPointer(pointer);
+    if (!point || !this.layoutBox) {
+      return false;
+    }
+    const p = this.toDesign(point);
+    this.releasePointer(p.id); // a down for an id still held (its up was lost) releases it first
+    const control = this.controls.find((candidate) => rectContains(candidate.rect, p));
+    if (control) {
+      // One finger per control: a second finger on the same button neither re-presses nor re-fires it.
+      if (![...this.presses.values()].includes(control)) {
+        this.presses.set(p.id, control);
+        this.setPressed(control, true);
+      }
+      return true;
+    }
+    const stage = this.layoutBox.stages.find((candidate) => rectContains(candidate.swipe, p));
+    if (stage) {
+      this.swipes.set(p.id, { slot: stage.slot, startX: p.x, fired: false });
+      return true;
+    }
+    return false;
+  }
+
+  handlePointerMove(pointer) {
     const point = asPointer(pointer);
     if (!point) {
       return false;
     }
-
-    const routed = this.routePointer("handlePointerDown", point, game);
-    if (routed) {
+    const p = this.toDesign(point);
+    const swipe = this.swipes.get(p.id);
+    if (swipe) {
+      const dx = p.x - swipe.startX;
+      if (!swipe.fired && Math.abs(dx) > SWIPE_PX) {
+        swipe.fired = true;
+        this.shiftSelection(dx < 0 ? 1 : -1, swipe.slot);
+      }
       return true;
     }
-
-    const button = this.findButtonAt(point);
-    if (!button) {
-      return false;
-    }
-
-    this.activePointerId = point.id;
-    this.activeButton = button;
-    this.setPressed(button, true);
-    return true;
-  }
-
-  handlePointerMove(pointer, game) {
-    const point = asPointer(pointer);
-    if (!point) {
-      return false;
-    }
-
-    const routed = this.routePointer("handlePointerMove", point, game);
-    if (routed) {
+    const control = this.presses.get(p.id);
+    if (control) {
+      this.setPressed(control, rectContains(control.rect, p));
       return true;
     }
-
-    if (this.activePointerId !== point.id || !this.activeButton) {
-      return false;
-    }
-
-    const inside = rectContains(this.getButtonRect(this.activeButton), point);
-    this.setPressed(this.activeButton, inside);
-    return true;
+    return false;
   }
 
   handlePointerUp(pointer, game) {
@@ -575,77 +892,52 @@ export class MenuScene {
     if (!point) {
       return false;
     }
-
-    const routed = this.routePointer("handlePointerUp", point, game);
-    if (routed) {
-      return true;
+    const p = this.toDesign(point);
+    const hadSwipe = this.swipes.has(p.id);
+    const control = this.releasePointer(p.id);
+    if (control && rectContains(control.rect, p)) {
+      this.pressControl(control, game ?? this.activeGame);
     }
-
-    if (this.activePointerId !== point.id || !this.activeButton) {
-      return false;
-    }
-
-    const button = this.activeButton;
-    const inside = rectContains(this.getButtonRect(button), point);
-    this.setPressed(button, false);
-    this.activePointerId = null;
-    this.activeButton = null;
-
-    if (!inside) {
-      return true;
-    }
-
-    this.pressButton(button, game);
-    return true;
+    return hadSwipe || Boolean(control);
   }
 
-  handlePointerCancel(pointer, game) {
-    const point = asPointer(pointer);
-    const routed = point ? this.routePointer("handlePointerCancel", point, game) : false;
-    if (routed) {
-      return true;
+  handlePointerCancel() {
+    const hadWork = this.presses.size > 0 || this.swipes.size > 0;
+    for (const id of [...this.presses.keys(), ...this.swipes.keys()]) {
+      this.releasePointer(id);
     }
-
-    if (this.activeButton) {
-      this.setPressed(this.activeButton, false);
-      this.activeButton = null;
-      this.activePointerId = null;
-      return true;
-    }
-
-    return false;
+    return hadWork;
   }
 
-  ensurePreviewSheets() {
-    if (this.previewLoadPromise) {
-      return this.previewLoadPromise;
+  // Forgets one pointer's press (un-pressing its control) and swipe; returns the control it held.
+  releasePointer(id) {
+    const control = this.presses.get(id) ?? null;
+    if (control) {
+      this.presses.delete(id);
+      this.setPressed(control, false);
     }
+    this.swipes.delete(id);
+    return control;
+  }
 
-    this.previewLoadPromise = Promise.all(
-      PLAYER_CHARACTER_ROSTER.map(async (character) => {
-        let sheet = this.previewSheets.get(character.key);
-        if (!sheet) {
-          sheet = new SpriteSheet(buildPlayerCharacterSheetDataUrl(character.key), {
-            frameWidth: 64,
-            frameHeight: 64,
-            columns: 4,
-            rows: 1,
-            fallbackColor: character.bodyBottom,
-          });
-          this.previewSheets.set(character.key, sheet);
-        }
+  pressControl(control, game) {
+    // PLAY emits its own start_game click in startSelectedCharacter (keyboard Enter uses it too).
+    if (control.id !== "play") {
+      game?.eventBus?.emit?.("ui_click", { source: control.id });
+    }
+    control.onPress();
+  }
 
-        try {
-          await sheet.load();
-        } catch {
-          // Keep menu usable with fallback art.
-        }
-      }),
-    ).finally(() => {
-      this.previewLoadPromise = null;
-    });
+  toggleSound() {
+    // One switch for both: on if either was off, otherwise both off.
+    const on = !(this.settings.soundEnabled && this.settings.musicEnabled);
+    this.settings = saveSettings({ soundEnabled: on, musicEnabled: on });
+    this.activeGame?.audioManager?.setEnabled?.(on);
+    this.activeGame?.musicManager?.setEnabled?.(on);
+  }
 
-    return this.previewLoadPromise;
+  fighterFor(slot) {
+    return slot === "p2" ? this.selectedPlayer2CharacterKey : this.selectedCharacterKey;
   }
 
   startSelectedCharacter(game) {
@@ -656,247 +948,54 @@ export class MenuScene {
 
     const selectedKey = saveSelectedPlayerCharacterKey(this.selectedCharacterKey);
     const selectedMatchModeKey = saveSelectedVersusMatchModeKey(this.selectedMatchModeKey);
-    targetGame.sceneData = {
-      ...targetGame.sceneData,
+    const picks = {
       playerCharacterKey: selectedKey,
       matchMode: selectedMatchModeKey,
     };
+    if (!isVersusBotMatchMode(selectedMatchModeKey)) {
+      picks.player2CharacterKey = saveSelectedPlayer2CharacterKey(this.selectedPlayer2CharacterKey);
+    }
+    targetGame.sceneData = { ...targetGame.sceneData, ...picks };
     targetGame.eventBus?.emit?.("ui_click", {
       source: "start_game",
       key: selectedKey,
       matchMode: selectedMatchModeKey,
     });
-    targetGame.switchScene("versus", {
-      restart: true,
-      playerCharacterKey: selectedKey,
-      matchMode: selectedMatchModeKey,
-    });
+    targetGame.switchScene("versus", { restart: true, ...picks });
   }
 
   shiftMatchMode(direction) {
-    this.selectedMatchModeKey = cycleVersusMatchModeKey(this.selectedMatchModeKey, direction);
+    this.setSelectedMatchMode(cycleVersusMatchModeKey(this.selectedMatchModeKey, direction));
   }
 
-  shiftSelection(direction) {
-    this.selectedCharacterKey = cyclePlayerCharacterKey(this.selectedCharacterKey, direction);
+  shiftSelection(direction, slot = "p1") {
+    this.setSelectedFighter(slot, cyclePlayerCharacterKey(this.fighterFor(slot), direction));
   }
 
   setSelectedCharacter(key) {
-    this.selectedCharacterKey = getPlayerCharacterByKey(key).key;
+    this.setSelectedFighter("p1", key);
+  }
+
+  // A changed pick starts that stage's reveal flicker.
+  setSelectedFighter(slot, key) {
+    const next = getPlayerCharacterByKey(key).key;
+    if (next === this.fighterFor(slot)) {
+      return;
+    }
+    if (slot === "p2") {
+      this.selectedPlayer2CharacterKey = next;
+    } else {
+      this.selectedCharacterKey = next;
+    }
+    this.revealMs[slot] = 0;
   }
 
   setSelectedMatchMode(key) {
-    this.selectedMatchModeKey = getVersusMatchMode(key).key;
-  }
-
-  createButton(label, onPress) {
-    let button = null;
-    const options = {
-      label,
-      text: label,
-      onPress,
-      onTap: onPress,
-      onClick: onPress,
-      x: 0,
-      y: 0,
-      width: 0,
-      height: 0,
-    };
-
-    if (typeof ButtonClass === "function") {
-      const factories = [
-        () => new ButtonClass(options),
-        () => new ButtonClass(label, 0, 0, 0, 0, onPress),
-        () => new ButtonClass(0, 0, 0, 0, label, onPress),
-      ];
-
-      for (const create of factories) {
-        try {
-          button = create();
-          break;
-        } catch {
-          // Try the next constructor signature.
-        }
-      }
-    }
-
-    if (!isObject(button)) {
-      button = {};
-    }
-
-    button.__sceneButton = {
-      label,
-      onPress,
-      pressed: false,
-      rect: { x: 0, y: 0, width: 0, height: 0 },
-    };
-
-    return button;
-  }
-
-  syncSettingsButtons() {
-    const soundLabel = this.settings.soundEnabled ? "SFX: ON" : "SFX: OFF";
-    const musicLabel = this.settings.musicEnabled ? "MUSIC: ON" : "MUSIC: OFF";
-    this.setButtonLabel(this.soundButton, soundLabel);
-    this.setButtonLabel(this.musicButton, musicLabel);
-  }
-
-  setButtonLabel(button, label) {
-    if (!isObject(button)) {
+    const next = getVersusMatchMode(key).key;
+    if (next === this.selectedMatchModeKey) {
       return;
     }
-    if (isObject(button.__sceneButton)) {
-      button.__sceneButton.label = label;
-    }
-    if ("label" in button) {
-      button.label = label;
-    }
-    if ("text" in button) {
-      button.text = label;
-    }
-    callAny(button, ["setLabel", "setText"], [[label]]);
-  }
-
-  setButtonRect(button, x, y, width, height) {
-    if (!isObject(button)) {
-      return;
-    }
-
-    const rect = {
-      x: asNumber(x, 0),
-      y: asNumber(y, 0),
-      width: Math.max(0, asNumber(width, 0)),
-      height: Math.max(0, asNumber(height, 0)),
-    };
-
-    callAny(button, ["setBounds", "setRect", "setFrame"], [[rect.x, rect.y, rect.width, rect.height], [rect]]);
-    callAny(button, ["setPosition"], [[rect.x, rect.y]]);
-    callAny(button, ["setSize", "resize"], [[rect.width, rect.height]]);
-
-    if ("x" in button) {
-      button.x = rect.x;
-    }
-    if ("y" in button) {
-      button.y = rect.y;
-    }
-    if ("width" in button) {
-      button.width = rect.width;
-    }
-    if ("height" in button) {
-      button.height = rect.height;
-    }
-    if (isObject(button.bounds)) {
-      button.bounds.x = rect.x;
-      button.bounds.y = rect.y;
-      button.bounds.width = rect.width;
-      button.bounds.height = rect.height;
-    }
-    if (isObject(button.__sceneButton)) {
-      button.__sceneButton.rect = rect;
-    }
-  }
-
-  getButtonRect(button) {
-    if (!isObject(button)) {
-      return { x: 0, y: 0, width: 0, height: 0 };
-    }
-
-    if (isObject(button.bounds)) {
-      return {
-        x: asNumber(button.bounds.x, 0),
-        y: asNumber(button.bounds.y, 0),
-        width: Math.max(0, asNumber(button.bounds.width, 0)),
-        height: Math.max(0, asNumber(button.bounds.height, 0)),
-      };
-    }
-
-    if (isObject(button.__sceneButton) && isObject(button.__sceneButton.rect)) {
-      return button.__sceneButton.rect;
-    }
-
-    return {
-      x: asNumber(button.x, 0),
-      y: asNumber(button.y, 0),
-      width: Math.max(0, asNumber(button.width, 0)),
-      height: Math.max(0, asNumber(button.height, 0)),
-    };
-  }
-
-  setPressed(button, pressed) {
-    if (!isObject(button)) {
-      return;
-    }
-
-    callAny(button, ["setPressed", "setDown", "setActive"], [[pressed]]);
-
-    if ("pressed" in button) {
-      button.pressed = pressed;
-    }
-    if (isObject(button.__sceneButton)) {
-      button.__sceneButton.pressed = pressed;
-    }
-  }
-
-  findButtonAt(pointer) {
-    for (let i = this.buttons.length - 1; i >= 0; i -= 1) {
-      const button = this.buttons[i];
-      if (rectContains(this.getButtonRect(button), pointer)) {
-        return button;
-      }
-    }
-    return null;
-  }
-
-  pressButton(button, game) {
-    const result = callAny(button, ["press", "trigger", "click", "onPress", "onTap", "onClick"], [[game], []]);
-    if (result.called) {
-      return;
-    }
-
-    if (isObject(button.__sceneButton) && typeof button.__sceneButton.onPress === "function") {
-      button.__sceneButton.onPress(game);
-    }
-  }
-
-  renderButton(ctx, button) {
-    const result = callAny(button, ["render", "draw"], [[ctx, this], [ctx]]);
-    if (result.called) {
-      return;
-    }
-
-    const rect = this.getButtonRect(button);
-    const meta = isObject(button.__sceneButton) ? button.__sceneButton : null;
-    const pressed = Boolean(meta?.pressed);
-
-    ctx.save();
-    ctx.fillStyle = pressed ? "#2f65d4" : "#3d7ef2";
-    ctx.strokeStyle = "#dbe6ff";
-    ctx.lineWidth = 2;
-    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
-    ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = "700 24px Arial";
-    ctx.fillText(meta?.label ?? "Button", rect.x + rect.width * 0.5, rect.y + rect.height * 0.5);
-    ctx.restore();
-  }
-
-  routePointer(methodName, pointer, game) {
-    const names = pointerAliases(methodName);
-
-    for (let i = this.buttons.length - 1; i >= 0; i -= 1) {
-      const button = this.buttons[i];
-      const result = callAny(
-        button,
-        names,
-        [[pointer, game], [pointer], [pointer.x, pointer.y, pointer.id]],
-      );
-      if (result.called && Boolean(result.value)) {
-        return true;
-      }
-    }
-
-    return false;
+    this.selectedMatchModeKey = next;
+    this.layout();
   }
 }

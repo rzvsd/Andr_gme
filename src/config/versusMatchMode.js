@@ -3,21 +3,20 @@ import { load, save } from "../utils/storage.js";
 export const VERSUS_MATCH_MODE_STORAGE_KEY = "versus_match_mode";
 export const DEFAULT_VERSUS_MATCH_MODE_KEY = "human-vs-human";
 
+// `name` and `subLabel` are the menu's segmented-control cell (drawn in caps).
 export const VERSUS_MATCH_MODE_ROSTER = Object.freeze([
   Object.freeze({
     key: "human-vs-human",
-    name: "Human vs Human",
-    shortLabel: "PVP",
-    description: "Two local players share the arena.",
+    name: "VS Friend",
+    subLabel: "Same phone",
     p1Label: "P1",
     p2Label: "P2",
     botEnabled: false,
   }),
   Object.freeze({
     key: "human-vs-bot",
-    name: "Human vs Bot",
-    shortLabel: "BOT DUEL",
-    description: "You fight an AI-controlled fruit rival.",
+    name: "VS Bot",
+    subLabel: "Solo",
     p1Label: "YOU",
     p2Label: "BOT",
     botEnabled: true,

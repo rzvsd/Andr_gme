@@ -78,33 +78,25 @@ config (constants, settings)
    ├──► entities/* (imports core, config)
    │       ├──► Entity.js (base class)
    │       ├──► Player.js
-   │       ├──► Enemy.js
    │       ├──► Bullet.js
    │       └──► Platform.js
    │
    ├──► systems/* (imports entities, core)
    │       ├──► PhysicsSystem.js
-   │       ├──► CollisionSystem.js
-   │       ├──► AISystem.js
-   │       ├──► SpawnSystem.js
-   │       └──► ScoreSystem.js
+   │       └──► VersusCollisionSystem.js
    │
    ├──► rendering/* (imports entities, core)
    │       ├──► SpriteSheet.js
    │       ├──► Animator.js
-   │       ├──► ParticleEmitter.js
-   │       └──► Background.js
+   │       └──► ParticleEmitter.js
    │
    ├──► ui/* (imports core, rendering)
-   │       ├──► HUD.js
-   │       ├──► Button.js
-   │       ├──► Joystick.js
-   │       └──► ScoreBoard.js
+   │       ├──► VersusHUD.js
+   │       └──► VersusPauseOverlay.js
    │
    ├──► scenes/* (imports everything above)
    │       ├──► MenuScene.js
-   │       ├──► GameScene.js
-   │       ├──► PauseScene.js
+   │       ├──► VersusGameScene.js
    │       └──► GameOverScene.js
    │
    ├──► audio/* (imports core/EventBus)
@@ -151,21 +143,20 @@ Bullets are recycled, not garbage collected:
 ### 3. Event Bus (Decoupling)
 Modules communicate through events, not direct references:
 ```
-EventBus.emit('enemy_killed', { enemy, points: 100 })
-EventBus.emit('bullet_dodged', { distance: 5 })
-EventBus.emit('wave_cleared', { wave: 3 })
+EventBus.emit('versus:kill', { killerIndex: 0, victimIndex: 1 })
+EventBus.emit('versus:dodge', { dodgerIndex: 1 })
+EventBus.emit('bullet_fired', { owner: 0, bullet })
 ```
 
 ### 4. Scene State Machine
 ```
-MENU ──[play]──► GAME ──[pause]──► PAUSE
-                   │                  │
-                   │ [die]        [resume]
-                   ▼                  │
-               GAME_OVER ◄───────────┘
-                   │
-               [retry]──► GAME
-               [menu]──► MENU
+MENU ──[play]──► VERSUS ──[first to 5]──► GAME_OVER
+                   │                          │
+                   │ [pause]              [rematch]──► VERSUS
+                   ▼                      [menu]──► MENU
+             PAUSE OVERLAY (inside VERSUS, not a scene)
+               [resume]──► VERSUS
+               [quit]──► MENU
 ```
 
 ---

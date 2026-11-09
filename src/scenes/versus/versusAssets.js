@@ -22,6 +22,12 @@ export class VersusAssets {
     return getPlayerCharacterByKey(typeof candidate === "string" ? candidate : loadSelectedPlayerCharacterKey()).key;
   }
 
+  // PVP: the second player's own pick from the menu (payload or sceneData); falls back to P1's key.
+  resolvePlayer2CharacterKey(payload = {}, game, fallbackKey) {
+    const candidate = payload?.player2CharacterKey ?? game?.sceneData?.player2CharacterKey;
+    return getPlayerCharacterByKey(typeof candidate === "string" ? candidate : fallbackKey).key;
+  }
+
   resolveMatchModeKey(payload = {}, game) {
     const candidate = payload?.matchMode ?? game?.sceneData?.matchMode;
     return getVersusMatchMode(typeof candidate === "string" ? candidate : loadSelectedVersusMatchModeKey()).key;
@@ -35,9 +41,12 @@ export class VersusAssets {
   }
 
   getCharacterKeyForPlayer(index) {
-    return index === 1 && isVersusBotMatchMode(this.s.matchModeKey)
-      ? getPlayerCharacterByKey(this.s.botCharacterKey).key
-      : getPlayerCharacterByKey(this.s.playerCharacterKey).key;
+    if (index === 1) {
+      return isVersusBotMatchMode(this.s.matchModeKey)
+        ? getPlayerCharacterByKey(this.s.botCharacterKey).key
+        : getPlayerCharacterByKey(this.s.player2CharacterKey ?? this.s.playerCharacterKey).key;
+    }
+    return getPlayerCharacterByKey(this.s.playerCharacterKey).key;
   }
 
   getPlayerSheet(characterKey) {
@@ -48,6 +57,7 @@ export class VersusAssets {
   async preloadAssets() {
     const keysToLoad = [...new Set([
       getPlayerCharacterByKey(this.s.playerCharacterKey).key,
+      getPlayerCharacterByKey(this.s.player2CharacterKey ?? this.s.playerCharacterKey).key,
       getPlayerCharacterByKey(this.s.botCharacterKey).key,
     ])];
     const results = await Promise.all(keysToLoad.map((characterKey) => this.preloadCharacterSheet(characterKey)));
@@ -81,26 +91,5 @@ export class VersusAssets {
       }
       return false;
     }
-  }
-
-  buildBackgroundLayers() {
-    return [
-      {
-        imageSrc: "/sprites/background_layer_1.svg",
-        y: 0,
-        height: this.s.worldHeight,
-        parallaxX: 0.12,
-        parallaxY: 0,
-        opacity: 0.95,
-      },
-      {
-        imageSrc: "/sprites/background_layer_2.svg",
-        y: 32,
-        height: this.s.worldHeight * 0.86,
-        parallaxX: 0.24,
-        parallaxY: 0,
-        opacity: 0.78,
-      },
-    ];
   }
 }

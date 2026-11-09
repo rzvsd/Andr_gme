@@ -1,0 +1,105 @@
+# PRD — Bullet Dodge Arena
+
+Design detail lives in `docs/GAME_DESIGN.md` (rewritten in T-10 to match this PRD).
+This file is the source of truth for scope and for what "done" means.
+
+## Goal
+Bring Bullet Dodge Arena to end-user playable status on Android: a versus-only duel game
+(local PVP and Human vs Bot) in a dark arena, shipped as a release APK the owner signs and
+plays for 10 minutes on a real phone without a crash.
+
+## Users
+- One or two people on one Android phone, landscape, touch only.
+- Human vs Bot for solo play; local PVP shares the screen.
+- Proof runs on the `GafferApi36` emulator (agents) and the owner's phone (owner).
+
+## Out of scope
+- Single-player wave mode. Its code was removed on 2026-11-03 (T-28); it is still in git history on `main`.
+- Release signing by agents, monetization. (Online play and the Google Play release came into scope on 2026-11-02: Phase 4.)
+- Hero-lab sandbox pages (`hero-lab.html`, `hero-gallery.html`) stay dev-only; they are not part of the Android app.
+- Lit (classic) arena mode. Dark arena is the only mode.
+
+## Acceptance checks
+Each check must be provable. "How to prove" names a command, a screenshot, or a log.
+
+| ID | Check | How to prove | Status |
+|---|---|---|---|
+| A-01 | Menu offers versus only (PVP, Bot duel); Play starts the selected mode | emulator screenshot of menu + console log of scene switch | pass (harness/evidence/T-04/verify-menu.png, emu-menu2.png) |
+| A-02 | Dark arena: fighters hidden; revealed 0.3 s after firing and 0.5 s after being hit; platforms faint outlines; bullets and HUD always visible | unit test on reveal timers + three emulator screenshots (idle, firing, hit) | pass (browser: T-02, T-12; emulator: harness/evidence/T-12/emu-*.png) |
+| A-03 | No fall deaths: a player walking to a bridge end stops there; no death line | unit test on edge clamp + 2-minute emulator log with zero fall events | pass in browser (harness/evidence/T-03/); emulator confirm in T-04 |
+| A-04 | Fighters render as hero-lab characters (Pudd, Chonk, Ninja, Vector) within 2 s of match start, never placeholder boxes; no centre divider line | emulator screenshot compared with `project overview/game pictures/expectation.png` | pass (hero-lab rigs render in browser and on emulator: harness/evidence/T-12/, emu-firing2.png) |
+| A-05 | After a match with hits, HUD values and Game Over stats are non-zero; Retry and Menu buttons work | emulator screenshots of HUD and Game Over + tap log | pass (harness/evidence/T-04/: verify-hud.png, emu2-gameover.png, retry-restarts-match.jpg, menu-button-returns.jpg) |
+| A-06 | Immersive fullscreen (no status or nav bar), custom launcher icon and splash, hardware back = pause / exit confirm | emulator screenshots (launcher, splash, in-game) + `adb shell input keyevent 4` log | pass (harness/evidence/T-05/) |
+| A-07 | SFX play after first touch; a music loop plays in menu and battle; mute silences both; owner picked the samples | WebView console log lines from audio managers + decision row below | pass (browser: harness/evidence/T-07/; emulator logcat: harness/evidence/T-08/logcat-soak.log) |
+| A-08 | 10-minute bot duel on emulator: no crash or ANR, FPS overlay average 55+, first frame under 2 s after splash | `adb logcat` excerpt + overlay screenshot + timestamps | partial: emulator crash-free 10 min pass (harness/evidence/T-08/). Phone (S24 Ultra, 2026-11-02): first frame 1.43 s after launch, pass (harness/evidence/T-11/cold-start-run2.log, cold-run2/); fps avg 119.7, min window 105 in play, no crash or ANR over 6 min of bot matches (harness/evidence/T-11/soak-run2/); run stopped at the owner's request before 10 min |
+| A-09 | `assembleRelease` yields an unsigned APK under 15 MB; `docs/RELEASE.md` explains signing; owner signed, installed, played 10 min on phone | build log + file size + owner's pass report recorded below | partial (unsigned APK 3.7 MB built, recipe written: harness/evidence/T-09/; owner phone test pending T-11) |
+| A-10 | Docs match the product; new bugs logged in BUGS.md; `npm test` runs each test file once | doc diff + `npm test` summary (16 files, not 32) | pass (tests once: T-01; docs: T-10; BUG-032..036 logged: T-04) |
+| A-11 | `npm test`, `npm run build` and CI pass | command output | pass (harness/evidence/T-01/) |
+
+## Decisions
+| Date | Decision | Why |
+|---|---|---|
+| 2026-10-30 | Harness set up; `docs/GAME_DESIGN.md` stays the design doc | Avoid two copies of the design |
+| 2026-10-30 | Versus only; single-player wave mode cut | No menu entry, no recent work, keeps goal provable |
+| 2026-10-30 | Dark arena is the only mode; reveal 0.3 s on fire, 0.5 s on hit; own fighter hidden too | Shared screen: hiding both is what makes "they don't see each other" true |
+| 2026-10-30 | No falling: invisible walls at bridge ends, death line removed | Owner rule |
+| 2026-10-30 | Divider line removed | expectation.png has none; bug4.png circles it |
+| 2026-10-30 | Artifact = unsigned release APK + signing recipe; owner signs | Secrets stay with the owner |
+| 2026-10-30 | Agents prove on emulator; owner does final 10-min phone test | Only the owner has the phone |
+| 2026-10-30 | Quality bar: no crash in 10 min, 55+ fps avg on emulator, first frame < 2 s | Owner accepted suggestion |
+| 2026-10-30 | Audio: research task, 2–3 samples, owner picks, then implement; WebAudio-generated first, CC0 files as fallback | No licence risk, no APK growth |
+| 2026-10-30 | Old bug screenshots (bug1–3) belong to the cut scene; versus bugs get new BUG ids after emulator repro | Owner: "reproduce and log new bugs" |
+| 2026-10-30 | Tasks may add unit test files under `tests/` for new mechanics | Owner approved |
+| 2026-10-30 | Audio pick: loop C "Heartbeat Stalker" for battle, loop A "Dark Pulse" for menu (pause = A quieter, game over = C pad only), shared WebAudio SFX set from `dev/audio-lab.html` | Owner picked from the T-06 samples |
+| 2026-10-30 | Fighters are the hero-lab roster (Pudd, Chonk, Ninja, Vector) rendered as a Three.js WebGL layer over the 2D duel canvas; the six fruit ninjas are retired. Branch `worktree-design-hero-character` is brought into the work branch. | Owner: "use the characters you built and showed earlier like Chonk, not the fruit ones"; WebGL layer keeps the approved look |
+
+| 2026-10-30 | Phase 2 opened: the owner judged the build not user-ready visually (overlapping text, flat boxes, no hierarchy). Research top-rated games, redesign the menu first, then match HUD/arena and result, target a 5-star look. Three directions mocked up in `harness/evidence/T-13/mockups/`; owner picks one before any screen is rebuilt. | Owner message 2026-10-30 23:05 |
+| 2026-10-30 | Phase 2 direction: A (Blackout Arena) for menu and match, C-style split halves for the result screen. Owner approves every screen from mockups before it is built. Defaults to confirm on the mockups: mint accent, red/blue teams kept, Chakra Petch + Inter. | Owner: "mergi spre propunerea ta A si C, arata-mi inainte designul" |
+| 2026-11-02 | Shooting: every fighter (players and bot) has 3 shots; the shots refill 3 s after its last shot; 3 hits win a kill; shots stay straight, so a fighter on another level is safe | Owner phone test: "no character should be able to continuously shoot, 3 shots then 3 sec pause"; owner accepted the refill, 3-hit and straight-shot recommendations |
+| 2026-11-02 | Arena v2: zoom out (fighters about 56 of 411 px, hit area = drawn body) and ledges above each bridge, layout A (two levels) or B (three levels); shown as a mockup first, the owner picks before it is built | Owner: "characters and arena are too close", wants smaller platforms above to jump on and back down |
+| 2026-11-02 | Arena v3 replaces A/B: fighters about 48 of 411 px (hit area = drawn body), four levels 62 px apart, five jump-through ledges and three solid blocks per side; blocks are half a fighter tall and stop shots (cover; a fighter on a block or in mid-jump shoots over it); jump about 76 px, never into the HUD band; layout C (two forts, each fighter keeps to its side) or D (open course, one floor and a middle bridge, fighters go anywhere). Mockup first, the owner picks C or D. | Owner on the A/B mockup: "the map should be a bit more complex. Think Mario. More platforms to jump on. To hide." |
+| 2026-11-02 | Arena v3 layout C (two forts): each fighter keeps to its side; built in T-21 | Owner: "C, two forts" |
+| 2026-11-02 | VS FRIEND means each player on their own phone (online or local network), not two players on one phone. How to connect the phones is not decided yet. | Owner: "me my phone - friend his phone. Not both from same phone." |
+| 2026-11-02 | The game ships on Google Play and is played online by anyone, anywhere: QUICK MATCH against a random opponent and a friend invite by room code. | Owner: "This will be a Google Market game, so it should be playable online from any part of the world." and "Now let's prepare it for online game for anyone to play from any part of the world." |
+| 2026-11-02 | Online server: Cloudflare Workers with Durable Objects (one object per match room, one for the quick-match queue), on the owner's own Cloudflare account. The owner creates the account and logs in; agents write, test and deploy the code. The free plan covers the start (about 100,000 billed requests a day, 20 incoming WebSocket messages per request). | Owner asked the agent to choose ("dai tu"); global edge network, no server machine to run, WebSockets built in. |
+| 2026-11-02 | Online netcode: each phone moves its own fighter and sends its state and shots about 20 times a second; the phone that is hit decides the hit; the other fighter is drawn about 100 ms in the past and smoothed. Fighters never touch in layout C, so no shared physics is needed. | Simple, fair to the dodger, works at intercontinental delay. |
+| 2026-11-03 | Delete old, unused code and files (T-28): the retired single-player wave mode (12 modules), 2 unused HUD modules, the 3 tests of that code, the unused sprites folder, and the `design-hero-character` worktree (all its work is already in the main folder; its branch stays as a backup). This replaces "code stays" for the wave mode. | Owner: "delete what is old - no longer used, like tests, worktrees, etc" and "i need the space" |
+
+## Phase 2 (proposed 2026-10-30): 5-star look
+Goal: a player who installs the game rates the menu and the match as polished, not as a prototype.
+Direction proposal and research summary: `docs/VISUAL_DIRECTION.md`. Owner picked direction A (menu, match) with C-style split result on 2026-10-31; checks are active.
+
+| ID | Check | Evidence | Status |
+|---|---|---|---|
+| A-12 | Menu follows the chosen direction: one primary PLAY button (56 to 64 px) that is the brightest element, no overlapping text at 891x411 and 844x390, no help line, hero preview idles with a reveal animation on switch, defaults preselected (one tap to play) | screenshots at both viewports + tap count | pass (menu T-15, result T-17, pause T-18: one primary each, no overlaps at 891x411 and 844x390) |
+| A-13 | Every tap target is at least 48 x 48 px with 8 px gaps and sits 16 px inside the safe insets; nothing tappable within 40 px of the left or right edge | DOM/canvas hit-rect dump + screenshot overlay | pass (tests/menuLayout.test.js, tests/resultLayout.test.js check 48 px targets, gaps, insets, 40 px edge strips) |
+| A-14 | Shared tokens (colours, 4-size type scale, 8 px spacing, motion durations) in one module; no hard-coded colours or font strings left in scenes | grep + unit test on the token module | pass (src/theme/tokens.js, tests/tokens.test.js; grep clean in scenes and ui) |
+| A-15 | Match: HUD strip under 8 percent of the height, team-sided; arena has stage light, lit platform edges and vignette; reveal has rim light and floor spill; kill frame and tiered shake | emulator or phone screenshots idle / reveal / kill | pass (harness/evidence/T-16/: idle, reveal, kill frame; headless sim of kills and respawns) |
+| A-16 | Result screen: split halves in team colours, winner named in its colour, one primary REMATCH | screenshot | pass (harness/evidence/T-17/result-p2wins-844x390.jpg) |
+| A-17 | Menu sounds (tick, confirm, back) and press feedback (scale 0.96, 80 to 100 ms) on every button; fonts bundled offline (woff2) and loaded before first paint | console log + screenshot after cold start without network | partial: fonts bundled and loaded before first paint (T-14), press feedback on every button (T-15..T-17); pass: fonts bundled and loaded before first paint (T-14); press feedback on every button; menu sound family tick / confirm (PLAY, RESUME, REMATCH) / back (QUIT, MENU) in src/audio/synthAudio.js, mapped in AudioManager, tested in tests/audioMusic.test.js |
+
+## Phase 3 (2026-11-02): owner phone-test feedback
+Source: owner message after the 2026-11-02 phone run. Mockup: `harness/evidence/T-19/` (artifact https://claude.ai/artifact/BBNPtJDDfXF19Bi3ZLocTu).
+
+| ID | Check | Evidence | Status |
+|---|---|---|---|
+| A-18 | Each fighter fires at most 3 shots; the shots refill 3 s after its last shot; 3 hits kill; the bot follows the same rule; holding fire no longer keeps a fighter visible | unit tests on the shot limit and damage + headless sim (P1 holds fire 10 s, visible under half the time) | pass (harness/evidence/T-20/: tests/versusShots.test.js; real-scene sim: bursts of 3, 4-shot spans 3467 ms P1 and 3567 ms bot, P1 visible 28.9 %; browser 891x411) |
+| A-19 | HUD shows each fighter's shots left (3 pips under its score panel) and the refill progress | screenshots at 891x411 and 844x390 | pass (harness/evidence/T-21/: pip test in tests/versusDarkArena.test.js; browser-891-*.jpg, browser-844-ledge-fire.jpg) |
+| A-21 | Shooting is clear: a SHOOT button bottom right that shows the shots left on its ring (the same layout for any player on their own phone); moving never fires; the mute button moves to the top band | unit tests on input + screenshots at 891x411 and 844x390 + phone run | open (T-22, mockup waiting for the owner) |
+| A-20 | Arena v3: fighters about 48 px tall on the 411 px frame with a hit area matching the body; four levels of ledges and solid blocks per the owner's pick (C or D); blocks stop shots and block walking; every level reachable by a jump, no jump into the HUD band; swipe down drops through a ledge; no fall deaths | unit tests on layout and physics + phone screenshots | pass (harness/evidence/T-21/: unit tests, headless sim, browser 891x411 / 844x390, phone run 60 s at avg 119.9 fps with screenshots phone-*.jpg) |
+
+## Phase 4 (2026-11-02): online for anyone, anywhere, on Google Play
+Source: owner messages 2026-11-02 (decision rows above). Order: design first, then server, sync, deploy, store.
+
+| ID | Check | How to prove | Status |
+|---|---|---|---|
+| A-22 | Online lobby: the menu offers QUICK MATCH (anyone) and a friend invite (HOST shows a 4-letter code, JOIN takes one); a searching screen with CANCEL; after 20 s with nobody found it offers the bot; owner approved the mockup first | mockup + browser screenshots at 891x411 and 844x390 | open (T-23) |
+| A-23 | Match server: create and join a room by code, pair two players from the quick-match queue, relay messages, close idle or empty rooms | unit tests + a local `wrangler dev` run with two clients | open (T-24) |
+| A-24 | Online match: both phones show the same fighters, shots, hits, kills and result; rematch works; a lost connection ends the match with a clear message | two clients (phone + PC browser) against the local server, screenshots + logs | open (T-25) |
+| A-25 | Worldwide: the server runs on the owner's Cloudflare account; phone vs PC browser over the internet; round trip measured; still playable with 150 ms added delay | deploy log + latency log + phone screenshots | open (T-26) |
+| A-26 | Store ready for online play: privacy policy that covers online play, Data safety answers, INTERNET permission, version code; release signing stays with the owner | files + checklist in `docs/RELEASE.md` | open (T-27) |
+
+## Open questions
+- Phase 4: the owner needs a Cloudflare account (free) before T-26; agents cannot create accounts.
+- Resolved: owner phone is a Samsung Galaxy S24 Ultra (SM-S928B), Android 17, 1440x3120 at dpr 3.5, 120 Hz (seen over adb 2026-10-30 23:00).
+- Phase 2: accent colour, team colours and display font are defaults in the mockups until the owner confirms them.

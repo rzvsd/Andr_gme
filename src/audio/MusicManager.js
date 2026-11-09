@@ -1,10 +1,11 @@
 import {
   canUseHtmlAudio,
   clampVolume,
-  resolveAliasedDefinition,
-  resolveAudioSource,
+  getSharedAudioContext,
+  resumeAudioContext,
   unlockAudioProbe,
 } from "./audioUtils.js";
+import { createLoopA, createLoopC } from "./synthAudio.js";
 
 const DEFAULT_SCENE_TRACK_MAP = Object.freeze({
   menu: "bgm_menu",
@@ -14,35 +15,43 @@ const DEFAULT_SCENE_TRACK_MAP = Object.freeze({
   game_over: "bgm_gameover",
 });
 
-function nowMs() {
-  if (typeof performance !== "undefined" && typeof performance.now === "function") {
-    return performance.now();
-  }
-  return Date.now();
-}
+// Owner's pick (harness/PRD.md): A "Dark Pulse" for menu, C "Heartbeat Stalker"
+// for battle, pause = A quieter, game over = C pad only.
+const TRACKS = Object.freeze({
+  bgm_menu: { create: createLoopA, gain: 1 },
+  bgm_battle: { create: createLoopC, gain: 1 },
+  bgm_pause: { create: createLoopA, gain: 0.5 },
+  bgm_gameover: { create: (ctx, dest) => createLoopC(ctx, dest, { heartbeat: false }), gain: 1 },
+});
+
+const TRACK_ALIASES = Object.freeze({
+  menu_bgm: "bgm_menu",
+  battle_bgm: "bgm_battle",
+  pause_bgm: "bgm_pause",
+  game_over_bgm: "bgm_gameover",
+  bgm_game_over: "bgm_gameover",
+});
 
 export class MusicManager {
   constructor(eventBus, options = {}) {
     this.eventBus = eventBus ?? null;
     this.enabled = options.enabled !== false;
     this.volume = clampVolume(options.volume ?? 1);
-    this.basePath = typeof options.basePath === "string" ? options.basePath : "/audio";
-    this.tracks = options.tracks && typeof options.tracks === "object" ? options.tracks : {};
     this.sceneTrackMap = {
       ...DEFAULT_SCENE_TRACK_MAP,
       ...(options.sceneTrackMap && typeof options.sceneTrackMap === "object" ? options.sceneTrackMap : {}),
     };
+    this.audioContextFactory =
+      typeof options.audioContextFactory === "function" ? options.audioContextFactory : getSharedAudioContext;
 
     this.subscriptions = [];
-    this.failedTracks = new Set();
-    this.failedSourceIndexes = new Map();
-    this.missingAssetWarnings = new Set();
-
     this.currentTrack = null;
-    this.currentAudio = null;
+    this.currentLoop = null;
+    this.trackGain = null;
     this.pendingTrack = null;
     this.unlocked = options.unlocked === true;
-    this.fadeTimer = null;
+    this.context = null;
+    this.masterGain = null;
     this.disposed = false;
   }
 
@@ -89,12 +98,17 @@ export class MusicManager {
   }
 
   unlock() {
-    if (this.disposed || this.unlocked) {
+    if (this.disposed) {
+      return;
+    }
+    if (this.unlocked) {
+      resumeAudioContext(this.context);
       return;
     }
 
     if (!canUseHtmlAudio()) {
       this.unlocked = true;
+      this.#playPending();
       return;
     }
 
@@ -103,162 +117,92 @@ export class MusicManager {
         return;
       }
       this.unlocked = true;
-      if (this.pendingTrack) {
-        const track = this.pendingTrack;
-        this.pendingTrack = null;
-        this.play(track);
-      }
+      this.#playPending();
     });
   }
 
-  play(track) {
-    if (this.disposed || !this.enabled || !track || !canUseHtmlAudio()) {
+  play(trackName) {
+    if (this.disposed || !trackName) {
+      return false;
+    }
+    const track = TRACK_ALIASES[trackName] ?? trackName;
+    const definition = TRACKS[track];
+    if (!definition) {
       return false;
     }
 
-    if (this.failedTracks.has(track)) {
-      return false;
-    }
-
-    if (!this.unlocked) {
+    if (!this.enabled || !this.unlocked) {
       this.pendingTrack = track;
       return false;
     }
 
-    if (this.currentTrack === track && this.currentAudio) {
-      this.currentAudio.volume = this.volume;
-      if (this.currentAudio.paused) {
-        try {
-          const resumePromise = this.currentAudio.play();
-          if (resumePromise && typeof resumePromise.catch === "function") {
-            resumePromise.catch((error) => this.#handleTrackError(track, this.currentAudio.__sourceIndex, error));
-          }
-        } catch (error) {
-          this.#handleTrackError(track, this.currentAudio.__sourceIndex, error);
-        }
-      }
+    if (this.currentTrack === track && this.currentLoop) {
       return true;
     }
 
-    return this.#startTrack(track);
+    const ctx = this.#ensureContext();
+    if (!ctx) {
+      return false;
+    }
+
+    this.stop();
+
+    try {
+      this.trackGain = ctx.createGain();
+      this.trackGain.gain.value = definition.gain;
+      this.trackGain.connect(this.masterGain);
+      this.currentLoop = definition.create(ctx, this.trackGain);
+      this.currentLoop.start();
+    } catch {
+      this.stop();
+      return false;
+    }
+
+    this.currentTrack = track;
+    this.pendingTrack = null;
+    console.info(`[MusicManager] playing ${track}`);
+    return true;
   }
 
   stop() {
-    this.#clearFadeTimer();
-    if (!this.currentAudio) {
-      this.currentTrack = null;
-      return;
+    if (this.currentLoop) {
+      try {
+        this.currentLoop.stop();
+      } catch {
+        // Ignore.
+      }
     }
-
-    try {
-      this.currentAudio.pause();
-      this.currentAudio.currentTime = 0;
-      this.currentAudio.src = "";
-    } catch {
-      // Ignore.
+    if (this.trackGain) {
+      try {
+        // Detach so one-shots already scheduled by the loop go silent now.
+        this.trackGain.disconnect();
+      } catch {
+        // Ignore.
+      }
     }
-
-    this.currentAudio = null;
+    this.currentLoop = null;
+    this.trackGain = null;
     this.currentTrack = null;
-  }
-
-  fadeTo(volume, durationMs = 300) {
-    const target = clampVolume(volume);
-    if (!this.currentAudio) {
-      this.volume = target;
-      return;
-    }
-
-    this.#clearFadeTimer();
-
-    const duration = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
-    if (duration === 0) {
-      this.currentAudio.volume = target;
-      this.volume = target;
-      return;
-    }
-
-    const startVolume = this.currentAudio.volume;
-    const startTime = nowMs();
-
-    if (typeof globalThis.requestAnimationFrame === "function") {
-      const step = () => {
-        if (!this.currentAudio) {
-          this.#clearFadeTimer();
-          return;
-        }
-
-        const elapsed = nowMs() - startTime;
-        const progress = Math.min(1, elapsed / duration);
-        const nextVolume = startVolume + (target - startVolume) * progress;
-        this.currentAudio.volume = clampVolume(nextVolume);
-
-        if (progress >= 1) {
-          this.volume = target;
-          this.#clearFadeTimer();
-          return;
-        }
-
-        this.fadeTimer = {
-          type: "raf",
-          id: globalThis.requestAnimationFrame(step),
-        };
-      };
-
-      this.fadeTimer = {
-        type: "raf",
-        id: globalThis.requestAnimationFrame(step),
-      };
-      return;
-    }
-
-    if (typeof globalThis.setInterval !== "function") {
-      this.currentAudio.volume = target;
-      this.volume = target;
-      return;
-    }
-
-    this.fadeTimer = {
-      type: "interval",
-      id: globalThis.setInterval(() => {
-        if (!this.currentAudio) {
-          this.#clearFadeTimer();
-          return;
-        }
-
-        const elapsed = nowMs() - startTime;
-        const progress = Math.min(1, elapsed / duration);
-        const nextVolume = startVolume + (target - startVolume) * progress;
-        this.currentAudio.volume = clampVolume(nextVolume);
-
-        if (progress >= 1) {
-          this.volume = target;
-          this.#clearFadeTimer();
-        }
-      }, 50),
-    };
   }
 
   setEnabled(enabled) {
     this.enabled = Boolean(enabled);
     if (!this.enabled) {
+      if (this.currentTrack) {
+        this.pendingTrack = this.currentTrack;
+      }
       this.stop();
       return this.enabled;
     }
 
-    if (this.pendingTrack && this.unlocked) {
-      const track = this.pendingTrack;
-      this.pendingTrack = null;
-      this.play(track);
-    }
-
+    this.#playPending();
     return this.enabled;
   }
 
   setVolume(volume) {
     this.volume = clampVolume(volume);
-    if (this.currentAudio) {
-      this.currentAudio.volume = this.volume;
+    if (this.masterGain) {
+      this.masterGain.gain.value = this.volume;
     }
     return this.volume;
   }
@@ -268,35 +212,34 @@ export class MusicManager {
     this.disposed = true;
     this.unsubscribe();
     this.stop();
-    this.failedTracks.clear();
-    this.failedSourceIndexes.clear();
+    if (this.masterGain) {
+      try {
+        this.masterGain.disconnect();
+      } catch {
+        // Ignore.
+      }
+    }
+    this.masterGain = null;
+    this.context = null;
     this.pendingTrack = null;
+  }
+
+  #playPending() {
+    if (this.pendingTrack && this.enabled && this.unlocked) {
+      const track = this.pendingTrack;
+      this.pendingTrack = null;
+      this.play(track);
+    }
   }
 
   #handleSceneSwitch(payload) {
     const sceneName = this.#extractSceneName(payload);
     if (!sceneName) return;
 
-    const normalized = sceneName.toLowerCase();
-    if (
-      normalized !== "menu" &&
-      normalized !== "game" &&
-      normalized !== "versus" &&
-      normalized !== "pause" &&
-      normalized !== "game_over"
-    ) {
-      return;
+    const track = this.sceneTrackMap[sceneName.toLowerCase()];
+    if (track) {
+      this.play(track);
     }
-
-    const track = this.sceneTrackMap[normalized];
-    if (!track) {
-      if (normalized === "pause") {
-        this.fadeTo(Math.min(this.volume, 0.35), 200);
-      }
-      return;
-    }
-
-    this.play(track);
   }
 
   #extractSceneName(payload) {
@@ -316,106 +259,25 @@ export class MusicManager {
     return null;
   }
 
-  #startTrack(track) {
-    const source = this.#resolveSource(track);
-    if (!source) {
-      this.failedTracks.add(track);
-      return false;
+  #ensureContext() {
+    if (this.context) {
+      resumeAudioContext(this.context);
+      return this.context;
     }
-
-    this.#clearFadeTimer();
-    this.stop();
-
-    const audio = new Audio(source.src);
-    audio.preload = "auto";
-    audio.loop = true;
-    audio.volume = this.volume;
-    audio.__trackName = track;
-    audio.__sourceIndex = source.index;
-
-    audio.addEventListener("error", () => {
-      this.#handleTrackError(track, source.index, null);
-    });
-
-    this.currentTrack = track;
-    this.currentAudio = audio;
-
+    let ctx = null;
     try {
-      const playPromise = audio.play();
-      if (playPromise && typeof playPromise.catch === "function") {
-        playPromise.catch((error) => this.#handleTrackError(track, source.index, error));
-      }
-      return true;
-    } catch (error) {
-      this.#handleTrackError(track, source.index, error);
-      return false;
+      ctx = this.audioContextFactory();
+    } catch {
+      ctx = null;
     }
-  }
-
-  #handleTrackError(track, sourceIndex, error) {
-    if (error && error.name === "NotAllowedError") {
-      this.pendingTrack = track;
-      return;
+    if (!ctx || typeof ctx.createGain !== "function") {
+      return null;
     }
-
-    if (!Number.isInteger(sourceIndex)) {
-      return;
-    }
-
-    const failed = this.failedSourceIndexes.get(track) ?? new Set();
-    if (failed.has(sourceIndex)) {
-      return;
-    }
-
-    failed.add(sourceIndex);
-    this.failedSourceIndexes.set(track, failed);
-
-    const fallback = this.#resolveSource(track);
-    if (!fallback) {
-      this.failedTracks.add(track);
-      if (!this.missingAssetWarnings.has(track)) {
-        this.missingAssetWarnings.add(track);
-        console.warn(`[MusicManager] No playable sources resolved for track "${track}".`);
-      }
-      if (this.currentTrack === track) {
-        this.stop();
-      }
-      return;
-    }
-
-    if (this.currentTrack === track) {
-      this.#startTrack(track);
-    }
-  }
-
-  #resolveSource(track) {
-    const failed = this.failedSourceIndexes.get(track);
-    const definition = resolveAliasedDefinition(track, this.tracks);
-    return resolveAudioSource(track, definition, this.basePath, failed);
-  }
-
-  #clearFadeTimer() {
-    if (this.fadeTimer === null) {
-      return;
-    }
-
-    if (typeof this.fadeTimer === "number") {
-      if (typeof globalThis.clearInterval === "function") {
-        globalThis.clearInterval(this.fadeTimer);
-      }
-      if (typeof globalThis.cancelAnimationFrame === "function") {
-        globalThis.cancelAnimationFrame(this.fadeTimer);
-      }
-      this.fadeTimer = null;
-      return;
-    }
-
-    if (this.fadeTimer.type === "raf" && typeof globalThis.cancelAnimationFrame === "function") {
-      globalThis.cancelAnimationFrame(this.fadeTimer.id);
-    } else if (this.fadeTimer.type === "interval" && typeof globalThis.clearInterval === "function") {
-      globalThis.clearInterval(this.fadeTimer.id);
-    }
-
-    this.fadeTimer = null;
+    this.context = ctx;
+    this.masterGain = ctx.createGain();
+    this.masterGain.gain.value = this.volume;
+    this.masterGain.connect(ctx.destination);
+    resumeAudioContext(ctx);
+    return ctx;
   }
 }

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Character gallery</title>
+  <style>
+    :root { --bg: #14171f; --text: #e8ecf3; --muted: #8d97ab; --line: #2f3645; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+      font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+      display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px 16px;
+    }
+    body.dark-arena { background: #000; }
+    header { width: 100%; max-width: 960px; display: flex; align-items: center; }
+    h1 { font-size: 17px; font-weight: 600; margin: 0; flex: 1; }
+    button {
+      font: inherit; border-radius: 8px; border: 1px solid var(--line);
+      background: transparent; color: var(--text); padding: 10px 16px; cursor: pointer;
+    }
+    .stage { width: 100%; max-width: 960px; aspect-ratio: 800 / 360; border-radius: 12px; overflow: hidden; }
+    canvas { width: 100%; height: 100%; display: block; }
+    #labels {
+      width: 100%; max-width: 960px; display: flex; justify-content: space-around;
+      font-size: 18px; font-weight: 700;
+    }
+    #labels a { text-decoration: none; }
+    #labels a:hover { text-decoration: underline; }
+    p { color: var(--muted); margin: 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Character gallery</h1>
+    <button id="btn-lights">Lights off</button>
+  </header>
+  <div class="stage"><canvas id="gallery-canvas" width="800" height="360"></canvas></div>
+  <div id="labels"></div>
+  <p>Click a name to open that character in the hero lab: move, jump, shoot, knock out.</p>
+  <script type="module" src="/src/hero/gallery.js"></script>
+</body>
+</html>

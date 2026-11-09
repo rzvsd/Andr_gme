@@ -1,36 +1,45 @@
-# 🔊 audio/ — Audio Management
+# audio/ — Audio Management
 
-Sound effects and music playback. This module is fully decoupled — it only listens to EventBus events.
+Sound effects and music, all generated with WebAudio at runtime. No audio files.
+This module is fully decoupled — it only listens to EventBus events.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `AudioManager.js` | SFX playback — loads sound files, plays them on events, pools Audio elements to avoid lag |
-| `MusicManager.js` | Background music — loops BGM tracks, handles fade in/out, responds to scene changes |
+| `synthAudio.js` | Pure generators ported from `dev/audio-lab.html`: `createLoopA` (Dark Pulse), `createLoopC` (Heartbeat Stalker, `{ heartbeat: false }` = pad only), six SFX (`shoot`, `hit`, `kill`, `dodge`, `jump`, `click`), `createSfxBus` (feedback-delay room). Each takes `(audioContext, destination)`. |
+| `AudioManager.js` | SFX — maps gameplay events to synth SFX, gates on `enabled` and `volume`, unlocks on the first gesture. |
+| `MusicManager.js` | Music — maps scenes to loops, hard-stops between tracks, mutes and resumes. |
+| `audioUtils.js` | Unlock probe, shared `AudioContext`, volume clamp. |
 
-## Event-Driven Design
+## Wiring
 
-Audio never imports game entities or systems. It reacts to events:
+| Scene | Track | Loop |
+|---|---|---|
+| menu | `bgm_menu` | A at full gain |
+| game, versus | `bgm_battle` | C |
+| pause | `bgm_pause` | A at 0.5 gain |
+| game_over | `bgm_gameover` | C pad only, no heartbeat |
 
-```javascript
-// AudioManager listens for gameplay events:
-EventBus.on('bullet_fired', () => AudioManager.play('pew'));
-EventBus.on('player_hit', () => AudioManager.play('hit'));
-EventBus.on('enemy_killed', () => AudioManager.play('explosion'));
-EventBus.on('bullet_dodged', () => AudioManager.play('whoosh'));
-EventBus.on('wave_cleared', () => AudioManager.play('fanfare'));
+| Event | SFX |
+|---|---|
+| `bullet_fired` | shoot |
+| `player_hit`, `versus:player_hit` | hit |
+| `enemy_killed`, `versus:kill`, `wave_cleared` | kill |
+| `bullet_dodged`, `versus:dodge` | dodge |
+| `jump` | jump |
+| `ui_click` | click |
 
-// MusicManager listens for scene changes:
-EventBus.on('scene_enter', (scene) => {
-    if (scene === 'game') MusicManager.play('battle_bgm');
-    if (scene === 'menu') MusicManager.play('menu_bgm');
-});
-```
+## Autoplay rule
 
-## Audio Format
+Both managers stay locked until `unlockAudioProbe` succeeds, which needs a user
+gesture (`ui_click`). Only then is the shared `AudioContext` created or resumed.
+A track requested before unlock is kept as `pendingTrack` and starts on unlock.
 
-- **SFX:** `.webm` (Opus codec) with `.mp3` fallback
-- **BGM:** `.webm` (Opus) with `.mp3` fallback
-- All audio files stored in `public/audio/`
-- Mobile browsers require a user gesture before playing audio — handled by first touch on menu
+Console lines for logcat checks: `[AudioManager] synth SFX ready` (once) and
+`[MusicManager] playing <track>` (once per track switch).
+
+## Tests
+
+`tests/audioMusic.test.js` injects a fake context through the
+`audioContextFactory` option.

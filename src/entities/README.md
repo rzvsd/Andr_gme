@@ -8,8 +8,7 @@ All game objects that exist in the world. Each entity knows how to update itself
 |---|---|
 | `Entity.js` | Base class — position (x,y), velocity (vx,vy), dimensions (w,h), active flag, update/render stubs |
 | `Player.js` | Player character — movement, jumping, shooting, animation states, health |
-| `Enemy.js` | Enemy base — types (Grunt, Sniper, Rusher, Tank, Boss), AI hook, health, drops |
-| `Bullet.js` | Projectile — direction, speed, owner (player/enemy), damage, poolable |
+| `Bullet.js` | Projectile — direction, speed, owner (the player who fired), damage, poolable |
 | `Platform.js` | Static ground — rectangular collision body, renders as green block tile |
 
 ## Entity Lifecycle

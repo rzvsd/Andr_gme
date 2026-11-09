@@ -43,6 +43,7 @@ export class Player extends Entity {
       : PLAYER_FACING_MARKER_COLOR;
     this.moveIntent = 0;
     this.jumpRequested = false;
+    this.dropRequested = false;
     this.invulnerable = false;
   }
 
@@ -65,6 +66,8 @@ export class Player extends Entity {
     }
 
     this.jumpRequested = Boolean(consumePressed('jump')) || this.jumpRequested;
+    // Versus: drop through the ledge underfoot (the collision system acts on it).
+    this.dropRequested = Boolean(consumePressed('drop')) || this.dropRequested === true;
   }
 
   canShoot(nowMs = performance.now()) {

@@ -2,12 +2,14 @@ const ACTION_LEFT = "left";
 const ACTION_RIGHT = "right";
 const ACTION_JUMP = "jump";
 const ACTION_SHOOT = "shoot";
-const ACTIONS = [ACTION_LEFT, ACTION_RIGHT, ACTION_JUMP, ACTION_SHOOT];
+const ACTION_DROP = "drop";
+const ACTIONS = [ACTION_LEFT, ACTION_RIGHT, ACTION_JUMP, ACTION_SHOOT, ACTION_DROP];
 
 const TOUCH_ZONE_RATIO = 0.42;
 const MAX_POINTERS_PER_PLAYER = 2;
 const HORIZONTAL_DEADZONE_PX = 10;
 const SWIPE_UP_THRESHOLD_PX = 28;
+const SWIPE_DOWN_THRESHOLD_PX = 28;
 const SHOOT_HOLD_DELAY_MS = 120;
 const TAP_SHOOT_MAX_MS = 240;
 const TAP_MAX_TRAVEL_PX = 24;
@@ -16,6 +18,7 @@ const KEY_BINDINGS = Object.freeze({
   KeyA: { playerIndex: 0, action: ACTION_LEFT },
   KeyD: { playerIndex: 0, action: ACTION_RIGHT },
   KeyW: { playerIndex: 0, action: ACTION_JUMP },
+  KeyS: { playerIndex: 0, action: ACTION_DROP },
   Space: { playerIndex: 0, action: ACTION_JUMP },
   KeyJ: { playerIndex: 0, action: ACTION_SHOOT },
   KeyX: { playerIndex: 0, action: ACTION_SHOOT },
@@ -23,6 +26,7 @@ const KEY_BINDINGS = Object.freeze({
   ArrowLeft: { playerIndex: 1, action: ACTION_LEFT },
   ArrowRight: { playerIndex: 1, action: ACTION_RIGHT },
   ArrowUp: { playerIndex: 1, action: ACTION_JUMP },
+  ArrowDown: { playerIndex: 1, action: ACTION_DROP },
   Enter: { playerIndex: 1, action: ACTION_JUMP },
   KeyL: { playerIndex: 1, action: ACTION_SHOOT },
   Semicolon: { playerIndex: 1, action: ACTION_SHOOT },
@@ -34,6 +38,7 @@ function createActionFlags() {
     right: false,
     jump: false,
     shoot: false,
+    drop: false,
   };
 }
 
@@ -93,6 +98,11 @@ export class VersusInput {
     ];
 
     this.pointerSessions = new Map();
+    // VS BOT: the right zone is player 1's SHOOT area (the HUD draws the button there) and the left
+    // zone only moves, jumps and drops. Off: each zone is one player's and a held or tapped finger
+    // fires (two players on one phone).
+    this.shootButton = false;
+    this.firePointers = new Set();
     // M7: up to MAX_POINTERS_PER_PLAYER fingers per player — first finger steers,
     // any finger can tap/hold shoot or swipe jump. Enables move + shoot at once.
     this.activePointersByPlayer = [[], []];
@@ -135,8 +145,18 @@ export class VersusInput {
     this.reset();
   }
 
+  setShootButton(enabled) {
+    this.shootButton = Boolean(enabled);
+    this.reset();
+  }
+
+  isFireHeld() {
+    return this.firePointers.size > 0;
+  }
+
   reset() {
     this.pointerSessions.clear();
+    this.firePointers.clear();
     this.activePointersByPlayer[0] = [];
     this.activePointersByPlayer[1] = [];
 
@@ -175,6 +195,9 @@ export class VersusInput {
     }
     if (normalized === ACTION_SHOOT) {
       return player.keyboard.shoot || player.touch.shoot;
+    }
+    if (normalized === ACTION_DROP) {
+      return player.keyboard.drop;
     }
     return false;
   }
@@ -241,6 +264,9 @@ export class VersusInput {
     if (playerIndex < 0) {
       return false;
     }
+    if (this.shootButton && playerIndex === 1) {
+      return this.pressFire(pointerId);
+    }
     const activeList = this.activePointersByPlayer[playerIndex];
     if (!Array.isArray(activeList) || activeList.length >= MAX_POINTERS_PER_PLAYER) {
       return false;
@@ -256,6 +282,7 @@ export class VersusInput {
       lastY: y,
       downAtMs: nowMs,
       jumpTriggered: false,
+      dropTriggered: false,
       shootHoldTriggered: false,
       zoneWidth: width * TOUCH_ZONE_RATIO,
       viewWidth: width,
@@ -281,6 +308,9 @@ export class VersusInput {
     if (!session) {
       return false;
     }
+    if (session.role === "fire") {
+      return true;
+    }
 
     const x = getPointerX(pointer);
     const y = getPointerY(pointer);
@@ -304,6 +334,10 @@ export class VersusInput {
     if (!session.jumpTriggered && session.startY - session.lastY >= SWIPE_UP_THRESHOLD_PX) {
       session.jumpTriggered = true;
       this.players[session.playerIndex].pressed.jump = true;
+    }
+    if (!session.dropTriggered && session.lastY - session.startY >= SWIPE_DOWN_THRESHOLD_PX) {
+      session.dropTriggered = true;
+      this.players[session.playerIndex].pressed.drop = true;
     }
     this.updateShootHold(session, getNowMs());
     return true;
@@ -359,8 +393,26 @@ export class VersusInput {
     player.touch.right = false;
   }
 
+  // A finger on the SHOOT area fires at once and keeps firing while held (the shot clip and the
+  // cooldown pace it).
+  pressFire(pointerId) {
+    if (this.firePointers.size >= MAX_POINTERS_PER_PLAYER) {
+      return false;
+    }
+    this.firePointers.add(pointerId);
+    this.pointerSessions.set(pointerId, { id: pointerId, playerIndex: 0, role: "fire" });
+    this.players[0].pressed.shoot = true;
+    this.recomputeTouchShoot(0);
+    return true;
+  }
+
   updateShootHold(session, nowMs) {
     const player = this.players[session.playerIndex];
+    if (this.shootButton) {
+      // With a SHOOT button, a finger in the move zone never fires.
+      this.recomputeTouchShoot(session.playerIndex);
+      return;
+    }
     if (!session.shootHoldTriggered && nowMs - session.downAtMs >= SHOOT_HOLD_DELAY_MS) {
       session.shootHoldTriggered = true;
       player.pressed.shoot = true;
@@ -374,7 +426,7 @@ export class VersusInput {
       return;
     }
     const ids = this.activePointersByPlayer[playerIndex] ?? [];
-    let held = false;
+    let held = playerIndex === 0 && this.firePointers.size > 0;
     for (const id of ids) {
       const session = this.pointerSessions.get(id);
       if (session?.shootHoldTriggered) {
@@ -418,6 +470,12 @@ export class VersusInput {
     if (!session) {
       return false;
     }
+    if (session.role === "fire") {
+      this.pointerSessions.delete(pointerId);
+      this.firePointers.delete(pointerId);
+      this.recomputeTouchShoot(0);
+      return true;
+    }
 
     const x = getPointerX(pointer);
     const y = getPointerY(pointer);
@@ -436,8 +494,10 @@ export class VersusInput {
 
     if (
       allowTapShoot &&
+      !this.shootButton &&
       !session.shootHoldTriggered &&
       !session.jumpTriggered &&
+      !session.dropTriggered &&
       holdDuration <= TAP_SHOOT_MAX_MS &&
       travelX <= TAP_MAX_TRAVEL_PX &&
       travelY <= TAP_MAX_TRAVEL_PX

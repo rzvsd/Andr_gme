@@ -144,7 +144,8 @@ export class VersusCollisionSystem {
     this._players = [null, null];
   }
 
-  update(_deltaSeconds, context = {}) {
+  update(deltaSeconds, context = {}) {
+    const dt = isFiniteNumber(deltaSeconds) ? Math.max(0, Number(deltaSeconds)) : 0;
     const players = this.#resolvePlayers(context);
     const bullets = Array.isArray(context?.bullets) ? context.bullets : [];
     const platforms = Array.isArray(context?.platforms) ? context.platforms : [];
@@ -152,7 +153,7 @@ export class VersusCollisionSystem {
 
     this.#preparePlatforms(platforms);
     this.#preparePlayers(players);
-    this.#resolvePlayersAgainstPlatforms(players, platforms);
+    this.#resolvePlayersAgainstPlatforms(players, platforms, dt);
     this.#resolvePvpBulletCollisions(players, bullets, platforms, eventBus);
   }
 
@@ -216,7 +217,7 @@ export class VersusCollisionSystem {
     }
   }
 
-  #resolvePlayersAgainstPlatforms(players, platforms) {
+  #resolvePlayersAgainstPlatforms(players, platforms, dt) {
     for (const player of players) {
       if (!player || typeof player !== 'object') {
         continue;
@@ -227,7 +228,9 @@ export class VersusCollisionSystem {
         continue;
       }
 
-      let grounded = false;
+      this.#clampPlayerToOwnBridge(player, platforms);
+      this.#startDropThrough(player);
+
       let supportingPlatform = null;
 
       for (const platform of platforms) {
@@ -241,21 +244,31 @@ export class VersusCollisionSystem {
           continue;
         }
 
+        // Blocks are solid on every side, so each one is resolved even once a support is found.
+        if (platform.kind === 'block') {
+          if (this.#resolvePlayerAgainstBlock(player, platform, dt) && !supportingPlatform) {
+            supportingPlatform = platform;
+          }
+          continue;
+        }
+        if (supportingPlatform || platform === player.dropThroughPlatform) {
+          continue;
+        }
+
         const collisionBounds = getPlayerCollisionBounds(platform);
         if (!hasBounds(collisionBounds)) {
           continue;
         }
 
-        if (!this.#resolvePlayerOnSupportStrip(player, collisionBounds)) {
-          continue;
+        if (this.#resolvePlayerOnSupportStrip(player, collisionBounds, dt)) {
+          supportingPlatform = platform;
         }
-
-        grounded = true;
-        supportingPlatform = platform;
-        break;
       }
 
-      player.onGround = grounded;
+      if (supportingPlatform && supportingPlatform !== player.dropThroughPlatform) {
+        player.dropThroughPlatform = null;
+      }
+      player.onGround = supportingPlatform !== null;
       assignPlayerSupportMetadata(player, supportingPlatform);
     }
   }
@@ -449,6 +462,40 @@ export class VersusCollisionSystem {
     });
   }
 
+  #clampPlayerToOwnBridge(player, platforms) {
+    // Dark arena rule: each bridge has invisible walls at both ends, so nobody can fall off.
+    for (const platform of platforms) {
+      if (!isActiveEntity(platform) || !hasBounds(platform) || platform.isSolid === false) {
+        continue;
+      }
+      if (platform.kind && platform.kind !== 'ground') {
+        continue;
+      }
+      if (!this.#canPlayerCollideWithPlatform(player, platform)) {
+        continue;
+      }
+
+      const minX = Number(platform.x);
+      const maxX = minX + Number(platform.width) - Number(player.width);
+      if (maxX < minX) {
+        return;
+      }
+
+      if (Number(player.x) < minX) {
+        player.x = minX;
+        if (isFiniteNumber(player.vx) && Number(player.vx) < 0) {
+          player.vx = 0;
+        }
+      } else if (Number(player.x) > maxX) {
+        player.x = maxX;
+        if (isFiniteNumber(player.vx) && Number(player.vx) > 0) {
+          player.vx = 0;
+        }
+      }
+      return;
+    }
+  }
+
   #canPlayerCollideWithPlatform(player, platform) {
     const platformCategory = toBitmask(platform?.collisionCategory, 0);
     if (platformCategory === 0) {
@@ -459,7 +506,65 @@ export class VersusCollisionSystem {
     return (playerMask & platformCategory) !== 0;
   }
 
-  #resolvePlayerOnSupportStrip(player, platformBounds) {
+  // Swipe down on a ledge: fall through it. That ledge is ignored until the fighter lands elsewhere.
+  #startDropThrough(player) {
+    const requested = player.dropRequested === true;
+    player.dropRequested = false;
+    if (requested && player.onGround === true && player.supportingPlatform?.kind === 'ledge') {
+      player.dropThroughPlatform = player.supportingPlatform;
+    }
+  }
+
+  // Blocks: land on top, bump the head underneath, stop at the sides. Returns true when standing on it.
+  #resolvePlayerAgainstBlock(player, block, dt) {
+    const width = Number(player.width);
+    const height = Number(player.height);
+    const left = Number(player.x);
+    const top = Number(player.y);
+    const bottom = top + height;
+    const blockLeft = Number(block.x);
+    const blockTop = Number(block.y);
+    const blockRight = blockLeft + Number(block.width);
+    const blockBottom = blockTop + Number(block.height);
+    if (left + width <= blockLeft || left >= blockRight) {
+      return false;
+    }
+
+    const vy = isFiniteNumber(player.vy) ? Number(player.vy) : 0;
+    if (vy >= 0 && Math.abs(bottom - blockTop) <= PLATFORM_CONTACT_EPSILON) {
+      return true;
+    }
+    if (bottom <= blockTop || top >= blockBottom) {
+      return false;
+    }
+
+    if (vy >= 0 && bottom - vy * dt <= blockTop + VERSUS_PLATFORM_TOP_COLLISION_HEIGHT) {
+      player.y = blockTop - height;
+      player.vy = 0;
+      return true;
+    }
+    if (vy < 0 && top - vy * dt >= blockBottom - VERSUS_PLATFORM_TOP_COLLISION_HEIGHT) {
+      player.y = blockBottom;
+      player.vy = 0;
+      return false;
+    }
+
+    const vx = isFiniteNumber(player.vx) ? Number(player.vx) : 0;
+    if (left + width * 0.5 < (blockLeft + blockRight) * 0.5) {
+      player.x = blockLeft - width;
+      if (vx > 0) {
+        player.vx = 0;
+      }
+    } else {
+      player.x = blockRight;
+      if (vx < 0) {
+        player.vx = 0;
+      }
+    }
+    return false;
+  }
+
+  #resolvePlayerOnSupportStrip(player, platformBounds, dt) {
     const playerLeft = Number(player.x);
     const playerTop = Number(player.y);
     const playerRight = playerLeft + Number(player.width);
@@ -477,6 +582,11 @@ export class VersusCollisionSystem {
 
     const verticalVelocity = isFiniteNumber(player.vy) ? Number(player.vy) : 0;
     if (verticalVelocity < 0) {
+      return false;
+    }
+    // One-way: land only if the feet were on or above the top strip one step ago, so a jump that
+    // gets only the head through a ledge does not lift the fighter onto it.
+    if (playerBottom - verticalVelocity * dt > platformBottom) {
       return false;
     }
 

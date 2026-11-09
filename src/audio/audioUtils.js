@@ -1,34 +1,6 @@
 export const UNLOCK_AUDIO_DATA_URI =
   "data:audio/wav;base64,UklGRhQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
 
-const AUDIO_NAME_ALIASES = Object.freeze({
-  pew: ["sfx_shoot"],
-  sfx_shoot: ["pew"],
-  hit: ["sfx_hit"],
-  sfx_hit: ["hit"],
-  explosion: ["sfx_explosion"],
-  sfx_explosion: ["explosion"],
-  whoosh: ["sfx_whoosh"],
-  sfx_whoosh: ["whoosh"],
-  fanfare: ["sfx_fanfare"],
-  sfx_fanfare: ["fanfare"],
-  ui_click: ["sfx_click"],
-  sfx_click: ["ui_click"],
-  jump: ["sfx_jump"],
-  sfx_jump: ["jump"],
-  death: ["sfx_death"],
-  sfx_death: ["death"],
-  menu_bgm: ["bgm_menu"],
-  bgm_menu: ["menu_bgm"],
-  battle_bgm: ["bgm_battle"],
-  bgm_battle: ["battle_bgm"],
-  pause_bgm: ["bgm_pause"],
-  bgm_pause: ["pause_bgm"],
-  game_over_bgm: ["bgm_gameover", "bgm_game_over"],
-  bgm_gameover: ["game_over_bgm", "bgm_game_over"],
-  bgm_game_over: ["game_over_bgm", "bgm_gameover"],
-});
-
 export function clampVolume(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
@@ -43,6 +15,8 @@ export function canUseHtmlAudio() {
   return typeof Audio !== "undefined";
 }
 
+// Plays a muted, silent clip. It only resolves after the browser has seen a
+// user gesture, so a success here means WebAudio may start too.
 export function unlockAudioProbe(onFinish) {
   if (!canUseHtmlAudio()) {
     onFinish?.(true);
@@ -78,94 +52,39 @@ export function unlockAudioProbe(onFinish) {
   }
 }
 
-export function getAliasedAudioNames(name) {
-  const queue = [name];
-  const resolved = [];
-  const seen = new Set();
+// One AudioContext for SFX and music. Created on first call, which must happen
+// after the unlock probe succeeded (the autoplay rule). Returns null when
+// WebAudio is missing (unit tests, old WebViews).
+let sharedContext = null;
 
-  while (queue.length > 0) {
-    const value = queue.shift();
-    if (typeof value !== "string") continue;
-
-    const trimmed = value.trim();
-    if (!trimmed || seen.has(trimmed)) continue;
-
-    seen.add(trimmed);
-    resolved.push(trimmed);
-
-    const aliases = AUDIO_NAME_ALIASES[trimmed];
-    if (Array.isArray(aliases)) {
-      for (const alias of aliases) {
-        queue.push(alias);
-      }
-    }
+export function getSharedAudioContext() {
+  if (sharedContext) {
+    return sharedContext;
   }
-
-  return resolved;
-}
-
-export function resolveAliasedDefinition(name, definitions) {
-  if (!definitions || typeof definitions !== "object") {
-    return undefined;
-  }
-
-  const aliases = getAliasedAudioNames(name);
-  for (const alias of aliases) {
-    if (Object.prototype.hasOwnProperty.call(definitions, alias)) {
-      return definitions[alias];
-    }
-  }
-
-  return undefined;
-}
-
-export function getAudioCandidates(name, definition, basePath = "/audio") {
-  const candidates = [];
-  const aliases = getAliasedAudioNames(name);
-
-  if (typeof definition === "string") {
-    candidates.push(definition);
-  } else if (definition && typeof definition === "object") {
-    if (typeof definition.src === "string") candidates.push(definition.src);
-    if (typeof definition.webm === "string") candidates.push(definition.webm);
-    if (typeof definition.mp3 === "string") candidates.push(definition.mp3);
-    if (Array.isArray(definition.sources)) {
-      for (const source of definition.sources) {
-        if (typeof source === "string") {
-          candidates.push(source);
-        }
-      }
-    }
-  }
-
-  for (const alias of aliases) {
-    candidates.push(`${basePath}/${alias}.wav`);
-    candidates.push(`${basePath}/${alias}.webm`);
-    candidates.push(`${basePath}/${alias}.mp3`);
-  }
-
-  const unique = [];
-  const seen = new Set();
-  for (const candidate of candidates) {
-    if (typeof candidate !== "string") continue;
-    const trimmed = candidate.trim();
-    if (!trimmed || seen.has(trimmed)) continue;
-    seen.add(trimmed);
-    unique.push(trimmed);
-  }
-  return unique;
-}
-
-export function resolveAudioSource(name, definition, basePath, failedIndexes) {
-  const candidates = getAudioCandidates(name, definition, basePath);
-  if (candidates.length === 0) {
+  if (typeof window === "undefined") {
     return null;
   }
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  if (typeof Ctor !== "function") {
+    return null;
+  }
+  try {
+    sharedContext = new Ctor();
+  } catch {
+    return null;
+  }
+  return sharedContext;
+}
 
-  for (let i = 0; i < candidates.length; i += 1) {
-    if (!failedIndexes || !failedIndexes.has(i)) {
-      return { index: i, src: candidates[i] };
+export function resumeAudioContext(ctx) {
+  if (ctx && ctx.state === "suspended" && typeof ctx.resume === "function") {
+    try {
+      const result = ctx.resume();
+      if (result && typeof result.catch === "function") {
+        result.catch(() => {});
+      }
+    } catch {
+      // Ignore resume errors; the next gesture retries.
     }
   }
-  return null;
 }
