@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>Tower lab</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #05060a; overflow: hidden; }
+    body { display: flex; align-items: center; justify-content: center; }
+    #stage {
+      position: relative; aspect-ratio: 891 / 411;
+      width: min(100vw, calc(100vh * 891 / 411));
+      touch-action: none; user-select: none; -webkit-user-select: none;
+    }
+    #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="world"></canvas>
+    <canvas id="hud"></canvas>
+  </div>
+  <script type="module" src="/src/lab/towerLab.js"></script>
+</body>
+</html>
