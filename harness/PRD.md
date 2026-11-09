@@ -99,7 +99,38 @@ Source: owner messages 2026-11-02 (decision rows above). Order: design first, th
 | A-25 | Worldwide: the server runs on the owner's Cloudflare account; phone vs PC browser over the internet; round trip measured; still playable with 150 ms added delay | deploy log + latency log + phone screenshots | open (T-26) |
 | A-26 | Store ready for online play: privacy policy that covers online play, Data safety answers, INTERNET permission, version code; release signing stays with the owner | files + checklist in `docs/RELEASE.md` | open (T-27) |
 
+## Phase 5 (2026-11-09): direction B "Tower"
+Source: owner messages 2026-11-09 ("too simple, users would not get hooked"; "I like B"; "just do and tell me").
+Mockup: https://claude.ai/artifact/MJuoNrYKtBaSBGaLF4astH. Ideas and research: `harness/ENHANCEMENTS.md`.
+The owner asked for a plan without an interview. Rows marked "default" are the planner's choice; the owner can change them.
+
+| Date | Decision | Why |
+|---|---|---|
+| 2026-11-09 | Direction B: side view, an arena of several floors larger than one screen, a camera that follows the own fighter, a mini map that marks loud sounds | Owner: "I like B" |
+| 2026-11-09 | The look stays as built: Blackout Arena tokens, the 3D fighters, score pills, SHOOT button. New parts get a mockup on a real screenshot before they are built | Owner asked; answer confirmed with "yes" |
+| 2026-11-09 | Nothing that needs legal work: no real money, no prizes, no paid random items | Owner: "avoid what is related to legal" |
+| 2026-11-09 | default: the first task is a grey-box test on the owner's phone (camera, arena size, fighter size) before any other Phase 5 work | B has the least proof of the three directions; a fighter drops from about 48 px to about 30 px |
+| 2026-11-09 | default: 3 shots, 3 hits and first to 5 stay; VS BOT only in Phase 5 | The research supports the format; online is the expensive part |
+| 2026-11-09 | default: Phase 4 (T-23 to T-27) waits until T-39 passes. Its netcode decision assumed fighters that keep to their own side; in the tower they meet, and a hidden position must not reach the other phone. Review it before T-24 | Online play on the old arena would be work in the wrong order |
+| 2026-11-09 | default: E-03 to E-07 (loser picks, rewards, more arenas, measurement, friend play) and video export stay ideas | Keep Phase 5 small enough to test |
+
+| ID | Check | How to prove | Status |
+|---|---|---|---|
+| A-27 | Tower test: a grey-box arena at least 2 screens wide and 2 screens high; the camera follows the own fighter; on the owner's phone the average is 55 fps or more, and the owner says the fighter and the floors are readable | phone screenshots + FPS overlay reading + owner's verdict recorded here | open (T-29) |
+| A-28 | The owner approved mockups on real screenshots for: the arena layout, the mini map, the locker, the pickups | review page + owner's pick recorded here | open (T-30) |
+| A-29 | Tower arena: the approved layout; every floor is reachable from every other floor; both sides are mirror images; no fall deaths; shots stop at floors and blocks | unit tests on reachability and symmetry + screenshots at 891x411 and 844x390 | open (T-31) |
+| A-30 | Tells: running leaves footstep marks the other player sees; a slow walk leaves none; a landing makes a ripple; every sound has a visual mark; each player sees a faint outline of their own fighter | unit tests on the tell rules + screenshots of each tell | open (T-32) |
+| A-31 | Mini map: top centre; shows the tower, the own position and each loud sound for a short time; never shows the live position of a hidden fighter; no tap target; does not cover the score pills | unit test (no hidden position in the mini map data) + screenshots at 891x411 and 844x390 | open (T-33) |
+| A-32 | Locker: a fighter inside makes no sound and cannot shoot, and a shot at the locker hits the fighter. Reacting objects: a lamp swings for at least 2 s after a fighter passes | unit tests + screenshots | open (T-34) |
+| A-33 | Four pickups (wide loud shot, quiet exact shot, flare, trap), each with limited uses and its own reveal time; the base gun is unchanged; the trap reveals and does one hit, it never kills from full health | unit tests + screenshots of each pickup in use | open (T-35) |
+| A-34 | The bot plays the tower: it changes floors, goes to sound marks, takes pickups and is never stuck for more than 10 s | headless sim of 5 matches + log | open (T-36) |
+| A-35 | Meeting rules: a round timer, a pickup point in the centre, and lights on in overtime; no round lasts more than 90 s | unit tests + headless sim (two passive fighters still end the round) | open (T-37) |
+| A-36 | Reveal replay: after each kill the round plays again for 3 to 5 s with both fighters visible; a tap skips it | unit tests on the recorder + screenshots | open (T-38) |
+| A-37 | The owner plays 10 minutes of the tower against the bot on the phone with no crash, and says if he wants one more match | owner's report recorded here | open (T-39) |
+
 ## Open questions
+- Phase 5: if T-29 fails (fighter too small or the camera hides too much), the owner picks between a smaller tower that fits one screen and direction A (top view).
+- Phase 5: the research says a small arena reads better whole than through a camera and a mini map. T-29 and T-39 are the checks for this.
 - Phase 4: the owner needs a Cloudflare account (free) before T-26; agents cannot create accounts.
 - Resolved: owner phone is a Samsung Galaxy S24 Ultra (SM-S928B), Android 17, 1440x3120 at dpr 3.5, 120 Hz (seen over adb 2026-10-30 23:00).
 - Phase 2: accent colour, team colours and display font are defaults in the mockups until the owner confirms them.

@@ -204,3 +204,85 @@ Landscape viewport for browser checks: 844x390.
 - owns: dead `src/` modules, their tests and sprites, `src/main.js` (scene list), docs that named them, `.claude/worktrees/`
 - proves: no unused source module is left; the game still runs
 - check: `npm test` (22 files / 158 pass), `npm run build`, usage map from the HTML entry pages (62 of 62 modules used), browser run at 891x411 (menu, match, SHOOT button). Evidence: `harness/evidence/T-28/`.
+
+# Phase 5: direction B "Tower" (planned 2026-11-09)
+
+Order: test on the phone first (T-29), then mockups (T-30), then build. T-23 to T-27 wait until T-39 passes (PRD, Phase 5 decisions).
+All Phase 5 work is VS BOT. Colours and fonts come from `src/theme/tokens.js` only.
+
+## T-29 Tower test on the phone (grey box)
+- status: todo
+- depends: none
+- owns: `src/scenes/versusArena.js` (a second, larger test layout behind a dev flag), `src/core/Camera.js` and `src/scenes/versus/versusRenderer.js` (follow camera), `harness/evidence/T-29/`
+- proves: A-27
+- check: `npm test`, `npm run build`; a grey-box arena 2 screens wide and 2 high with plain floors and gaps; the camera follows the own fighter; browser screenshots at 891x411 and 844x390; debug APK on the owner phone: FPS overlay average, screenshots, and the owner verdict on fighter size. No new art, no mini map yet.
+
+## T-30 Tower mockups and owner pick
+- status: todo
+- depends: T-29
+- owns: `harness/evidence/T-30/`
+- proves: A-28
+- check: mockups on real screenshots from T-29 for the arena layout (two or three options: floors, gaps, ladders or jump-through ledges, blocks), the mini map, the locker and the four pickups; review page published; the owner pick recorded in the PRD.
+
+## T-31 Tower arena build
+- status: todo
+- depends: T-30
+- owns: `src/scenes/versusArena.js`, `src/scenes/versus/versusConfig.js`, `src/scenes/versus/versusPlayers.js` (movement between floors), `src/scenes/versus/versusProjectiles.js` (shots stop at floors and blocks), `tests/versusArena*.test.js`
+- proves: A-29
+- check: `npm test` (reachability of every floor, mirror symmetry, no fall deaths, shots stop), `npm run build`, screenshots at 891x411 and 844x390 compared with the T-30 pick.
+
+## T-32 Tells: footsteps, landing, silent walk, own outline
+- status: todo
+- depends: T-29
+- owns: `src/scenes/versus/versusEffects.js`, `src/scenes/versus/versusTells.js` (new), `src/core/VersusInput.js` (walk and run from the stick), `src/audio/synthAudio.js`, `tests/versusTells.test.js` (new)
+- proves: A-30
+- check: `npm test` (run leaves marks, slow walk leaves none, landing makes a ripple, every sound has a mark), `npm run build`, screenshots of each tell and of the own outline.
+
+## T-33 Mini map with sound marks
+- status: todo
+- depends: T-31, T-32
+- owns: `src/ui/VersusMiniMap.js` (new), `src/ui/VersusHUD.js`, `tests/versusMiniMap.test.js` (new)
+- proves: A-31
+- check: `npm test` (the mini map data never holds the live position of a hidden fighter; marks fade), `npm run build`, screenshots at 891x411 and 844x390 compared with the T-30 pick; the score pills stay clear.
+
+## T-34 Lockers and reacting objects
+- status: todo
+- depends: T-31, T-32
+- owns: `src/scenes/versus/versusObjects.js` (new), `src/scenes/versusArena.js` (object places only), `tests/versusObjects.test.js` (new)
+- proves: A-32
+- check: `npm test` (no sound and no shot inside a locker, a shot at the locker hits, the lamp swings 2 s or more), `npm run build`, screenshots.
+
+## T-35 Four weapon pickups
+- status: todo
+- depends: T-31
+- owns: `src/scenes/versus/versusPickups.js` (new), `src/scenes/versus/versusShots.js`, `src/scenes/versus/versusProjectiles.js` (pickup shots only), `tests/versusPickups.test.js` (new)
+- proves: A-33
+- check: `npm test` (uses, reveal time per weapon, base gun unchanged, the trap never kills from full health), `npm run build`, screenshots of each pickup in use. Not in parallel with T-31: both own `versusProjectiles.js`.
+
+## T-36 Bot for the tower
+- status: todo
+- depends: T-31, T-32, T-35
+- owns: `src/ai/VersusBotController.js`, `src/ai/versusBotCourse.js`, `tests/versusBot*.test.js`
+- proves: A-34
+- check: `npm test`, `npm run build`, headless sim of 5 matches: the bot changes floors, goes to sound marks, takes pickups, is never stuck over 10 s; log saved.
+
+## T-37 Meeting rules: timer, centre pickup, lights-on overtime
+- status: todo
+- depends: T-31, T-35
+- owns: `src/scenes/VersusRoundManager.js`, `src/scenes/versus/versusMatch.js`, `tests/versusRound*.test.js`
+- proves: A-35
+- check: `npm test`, `npm run build`, headless sim with two passive fighters: every round ends within 90 s.
+
+## T-38 Reveal replay
+- status: todo
+- depends: T-31
+- owns: `src/scenes/versus/versusReplay.js` (new), `src/scenes/VersusGameScene.js` (replay state), `src/scenes/versus/versusRenderer.js` (lights-on pass), `tests/versusReplay.test.js` (new)
+- proves: A-36
+- check: `npm test` (recorder keeps positions and shots of one round, playback matches), `npm run build`, screenshots of the replay; a tap skips it. Not in parallel with T-29 or T-37 work on the same files.
+
+## T-39 Owner phone test of the tower
+- status: todo
+- depends: T-33, T-34, T-36, T-37, T-38
+- owns: `harness/evidence/T-39/`
+- proves: A-37
+- check: debug APK on the owner phone; the owner plays 10 minutes against the bot and reports: crash or not, FPS, and "one more match" yes or no; result written to the PRD.

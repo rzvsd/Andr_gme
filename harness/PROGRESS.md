@@ -3,8 +3,8 @@
 Keep under 60 lines. Move old entries to `harness/archive.md`.
 Milestone history before the harness: `docs/AGENT_STATE.md`.
 
-- **Updated:** 2026-11-03 15:15
-- **Current task:** T-22 SHOOT button built and installed, waiting for the owner's play check. Next: Phase 4 online (T-23 lobby mockup, T-24 server). T-21 arena v3 layout C is done (`harness/evidence/T-21/`).
+- **Updated:** 2026-11-09 23:59
+- **Current task:** none in work. T-22 SHOOT button built and installed, waiting for the owner's play check. Next: Phase 5 direction B "Tower", first task T-29. Phase 4 online (T-23 to T-27) waits until T-39 passes. T-21 arena v3 layout C is done (`harness/evidence/T-21/`).
 - **Done today:** T-20 shot limit (3 shots, refill 3 s after the last shot, 3 hits kill, bot included): tests 25 files / 151 pass, build passes, real-scene sim and browser check in `harness/evidence/T-20/`. BUG-037 solved.
 - **Phone test 2026-11-02 (T-11 run 3):** first frame 1.43 s after launch (A-08 first-frame pass); 6 min of bot matches at avg 119.7 fps, no crash or ANR; the run was stopped at the owner's request before 10 min. Owner feedback became Phase 3 (A-18..A-20) in `harness/PRD.md`.
 - **Owner decisions 2026-11-02:** 3-shot rule with refill after 3 s, 3 hits per kill, straight shots (levels act as cover), arena mockup before building zoom and ledges. Round 2: a richer course ("think Mario"), more platforms and places to hide; owner picked layout C (two forts).
@@ -17,5 +17,7 @@ Milestone history before the harness: `docs/AGENT_STATE.md`.
 - **T-22 SHOOT button (2026-11-02):** built for VS BOT and installed on the phone (21:59): the right side fires, the left side only moves, jumps and drops; the ring shows shots left; mute moved to the top band. Seen in the browser at 891x411 on 2026-11-03 (`harness/evidence/T-28/browser-891-match.jpg`); 844x390 and the owner's phone play still open.
 - **Phase 4 (online, anyone, anywhere, Google Play):** planned in `harness/PRD.md` (A-22..A-26) and `harness/TASKS.md` (T-23..T-27): lobby mockup, Cloudflare match server, online sync, deploy, store readiness.
 - **T-28 cleanup (2026-11-03):** removed the retired single-player mode (12 modules), 2 unused HUD modules, 3 tests, the unused sprites folder and the merged hero-lab worktree; tests 22 files / 158 pass, build passes, every remaining module is used. Report: `harness/evidence/T-28/report.md`.
-- **Next action:** owner plays the SHOOT button on the phone; then T-23 lobby mockup and T-24 server (no account needed until T-26).
-- **Branch:** `harness/android-playable` (uncommitted; owner commits)
+- **Owner 2026-11-09:** this game is the one project to take to Google Play. The game feels "too simple" to hook a player; ideas E-01..E-07 are in `harness/ENHANCEMENTS.md` (from the 2026-11-09 research; ideas, not tasks yet; nothing that needs legal work).
+- **Phase 5 (2026-11-09):** the owner chose direction B "Tower" from three mockups (https://claude.ai/artifact/MJuoNrYKtBaSBGaLF4astH): side view, several floors, follow camera, mini map with sound marks. Planned without an interview at the owner's request; planner defaults are marked in the PRD. Checks A-27..A-37, tasks T-29..T-39. The look stays as built; every new part gets a mockup first.
+- **Next action:** T-29 tower test on the phone (grey box: larger arena and follow camera, then the owner's verdict on fighter size). The owner's play check of the SHOOT button (T-22) is still open.
+- **Branch:** `main` (all work pushed 2026-11-09; old branches deleted). Work on short branches from `main`.
