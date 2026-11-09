@@ -74,6 +74,18 @@ This repo uses a file-based harness. Any agent or human can continue the work fr
 5. Pass: mark `done`, update `PROGRESS.md`. Fail: fix, at most 3 tries, then mark `blocked` and ask the owner.
 6. A mistake worth remembering goes to `LEARNINGS.md` → `Proposed`, with evidence. Never to `Kept`.
 
+### Three agents per task (Claude Code)
+`/kickoff T-xx` runs one task through three agents, one at a time. Definitions: `.claude/agents/`.
+
+| Agent | Does | Writes |
+|---|---|---|
+| `planner` | Turns the task into steps, requirements and checks | `harness/evidence/T-xx/plan.md` only |
+| `builder` | Implements the plan in the files the task owns | code, tests the task owns, evidence |
+| `reviewer` | Checks the result on its own, runs the tests, returns a revision plan | `harness/evidence/T-xx/review.md` only |
+
+A failed review goes back to the builder, at most 2 rounds, then the task is `blocked`.
+Work branch: `main_2`. Nothing is merged into `main` unless the owner asks.
+
 ### Rules
 - "Done" means the checks passed and the evidence is saved. An agent's own claim is not proof.
 - Only the owner moves a learning from `Proposed` to `Kept`.

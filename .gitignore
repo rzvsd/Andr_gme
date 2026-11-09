@@ -18,3 +18,5 @@ keystore.properties
 # Harness evidence (reports are committed; screenshots and logs stay local)
 harness/evidence/*/*
 !harness/evidence/*/report.md
+!harness/evidence/*/plan.md
+!harness/evidence/*/review.md
