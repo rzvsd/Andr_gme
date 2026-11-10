@@ -128,6 +128,32 @@ The owner asked for a plan without an interview. Rows marked "default" are the p
 | A-36 | Reveal replay: after each kill the round plays again for 3 to 5 s with both fighters visible; a tap skips it | unit tests on the recorder + screenshots | open (T-38) |
 | A-37 | The owner plays 10 minutes of the tower against the bot on the phone with no crash, and says if he wants one more match | owner's report recorded here | open (T-39) |
 
+## Phase 6 (2026-11-10): delivery
+
+The owner gave the project to Claude on 2026-11-10 ("this codebase is yours ... make it a delivery ready game for this
+new generation of kids playing"). From this date Claude makes the product decisions and records them here.
+
+| Decision (Claude, 2026-11-10) | Why |
+|---|---|
+| Players: about 10 to 16 years old, on Android phones | The owner's words: the TikTok generation |
+| Free game. No ads, no purchases, no real money, no accounts, no chat, no data leaves the phone | Young players; the owner's rule "avoid what is related to legal"; store rules stay simple |
+| The tower lab is the match. The phone test and mockup gates of Phase 5 (T-29, T-30) are dropped | The owner saw the lab and said the look is good; a second gate adds no information |
+| Rules: first to 5, 3 hits, 3 shots; dark play; lights on in the round intro, after a knockout, and after 60 s of a round | Short rounds; the lights-on moment is the pay-off of a dark round |
+| One mode, VS BOT, until online play exists | A mode that does not work must not be on the menu |
+| Work stays on `main_2`; nothing is merged into `main` unless a person asks | The earlier owner rule; `main` is still the way back |
+
+| ID | Check | Proof | Status |
+|---|---|---|---|
+| A-38 | A tower match runs in the app from the menu to the result screen | browser run + `harness/evidence/T-40/report.md` | pass (T-40) |
+| A-39 | The menu and the result screen show only things that work | screenshots + tests | open (T-41) |
+| A-40 | No unused source module; the docs describe the tower match | usage map | open (T-42) |
+| A-41 | Phone: 55 fps or more on average, every touch control works, 10 minutes with no crash | phone run | open (T-43) |
+| A-42 | Bot: three levels, never stalls over 10 s | scripted run | open (T-44) |
+| A-43 | Reveal replay after each knockout | screenshots | open (T-45) |
+| A-44 | The tower has its own sounds; distance changes the volume | tests | open (T-46) |
+| A-45 | Wins are saved and unlock heroes or hats; nothing is sold | tests | open (T-47) |
+| A-46 | Release build, store text, screenshots and privacy note are ready | `docs/STORE.md` | open (T-48) |
+
 ## Open questions
 - Phase 5: if T-29 fails (fighter too small or the camera hides too much), the owner picks between a smaller tower that fits one screen and direction A (top view).
 - Phase 5: the research says a small arena reads better whole than through a camera and a mini map. T-29 and T-39 are the checks for this.

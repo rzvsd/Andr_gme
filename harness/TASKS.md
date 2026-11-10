@@ -211,78 +211,147 @@ Order: test on the phone first (T-29), then mockups (T-30), then build. T-23 to 
 All Phase 5 work is VS BOT. Colours and fonts come from `src/theme/tokens.js` only.
 
 ## T-29 Tower test on the phone (grey box)
-- status: todo
+- status: dropped (replaced by Phase 6 on 2026-11-10)
 - depends: none
 - owns: `src/scenes/versusArena.js` (a second, larger test layout behind a dev flag), `src/core/Camera.js` and `src/scenes/versus/versusRenderer.js` (follow camera), `harness/evidence/T-29/`
 - proves: A-27
 - check: `npm test`, `npm run build`; a grey-box arena 2 screens wide and 2 high with plain floors and gaps; the camera follows the own fighter; browser screenshots at 891x411 and 844x390; debug APK on the owner phone: FPS overlay average, screenshots, and the owner verdict on fighter size. No new art, no mini map yet.
 
 ## T-30 Tower mockups and owner pick
-- status: todo
+- status: dropped (replaced by Phase 6 on 2026-11-10)
 - depends: T-29
 - owns: `harness/evidence/T-30/`
 - proves: A-28
 - check: mockups on real screenshots from T-29 for the arena layout (two or three options: floors, gaps, ladders or jump-through ledges, blocks), the mini map, the locker and the four pickups; review page published; the owner pick recorded in the PRD.
 
 ## T-31 Tower arena build
-- status: todo
+- status: dropped (replaced by Phase 6 on 2026-11-10)
 - depends: T-30
 - owns: `src/scenes/versusArena.js`, `src/scenes/versus/versusConfig.js`, `src/scenes/versus/versusPlayers.js` (movement between floors), `src/scenes/versus/versusProjectiles.js` (shots stop at floors and blocks), `tests/versusArena*.test.js`
 - proves: A-29
 - check: `npm test` (reachability of every floor, mirror symmetry, no fall deaths, shots stop), `npm run build`, screenshots at 891x411 and 844x390 compared with the T-30 pick.
 
 ## T-32 Tells: footsteps, landing, silent walk, own outline
-- status: todo
+- status: dropped (replaced by Phase 6 on 2026-11-10)
 - depends: T-29
 - owns: `src/scenes/versus/versusEffects.js`, `src/scenes/versus/versusTells.js` (new), `src/core/VersusInput.js` (walk and run from the stick), `src/audio/synthAudio.js`, `tests/versusTells.test.js` (new)
 - proves: A-30
 - check: `npm test` (run leaves marks, slow walk leaves none, landing makes a ripple, every sound has a mark), `npm run build`, screenshots of each tell and of the own outline.
 
 ## T-33 Mini map with sound marks
-- status: todo
+- status: dropped (replaced by Phase 6 on 2026-11-10)
 - depends: T-31, T-32
 - owns: `src/ui/VersusMiniMap.js` (new), `src/ui/VersusHUD.js`, `tests/versusMiniMap.test.js` (new)
 - proves: A-31
 - check: `npm test` (the mini map data never holds the live position of a hidden fighter; marks fade), `npm run build`, screenshots at 891x411 and 844x390 compared with the T-30 pick; the score pills stay clear.
 
 ## T-34 Lockers and reacting objects
-- status: todo
+- status: dropped (replaced by Phase 6 on 2026-11-10)
 - depends: T-31, T-32
 - owns: `src/scenes/versus/versusObjects.js` (new), `src/scenes/versusArena.js` (object places only), `tests/versusObjects.test.js` (new)
 - proves: A-32
 - check: `npm test` (no sound and no shot inside a locker, a shot at the locker hits, the lamp swings 2 s or more), `npm run build`, screenshots.
 
 ## T-35 Four weapon pickups
-- status: todo
+- status: dropped (replaced by Phase 6 on 2026-11-10)
 - depends: T-31
 - owns: `src/scenes/versus/versusPickups.js` (new), `src/scenes/versus/versusShots.js`, `src/scenes/versus/versusProjectiles.js` (pickup shots only), `tests/versusPickups.test.js` (new)
 - proves: A-33
 - check: `npm test` (uses, reveal time per weapon, base gun unchanged, the trap never kills from full health), `npm run build`, screenshots of each pickup in use. Not in parallel with T-31: both own `versusProjectiles.js`.
 
 ## T-36 Bot for the tower
-- status: todo
+- status: dropped (replaced by Phase 6 on 2026-11-10)
 - depends: T-31, T-32, T-35
 - owns: `src/ai/VersusBotController.js`, `src/ai/versusBotCourse.js`, `tests/versusBot*.test.js`
 - proves: A-34
 - check: `npm test`, `npm run build`, headless sim of 5 matches: the bot changes floors, goes to sound marks, takes pickups, is never stuck over 10 s; log saved.
 
 ## T-37 Meeting rules: timer, centre pickup, lights-on overtime
-- status: todo
+- status: dropped (replaced by Phase 6 on 2026-11-10)
 - depends: T-31, T-35
 - owns: `src/scenes/VersusRoundManager.js`, `src/scenes/versus/versusMatch.js`, `tests/versusRound*.test.js`
 - proves: A-35
 - check: `npm test`, `npm run build`, headless sim with two passive fighters: every round ends within 90 s.
 
 ## T-38 Reveal replay
-- status: todo
+- status: dropped (replaced by Phase 6 on 2026-11-10)
 - depends: T-31
 - owns: `src/scenes/versus/versusReplay.js` (new), `src/scenes/VersusGameScene.js` (replay state), `src/scenes/versus/versusRenderer.js` (lights-on pass), `tests/versusReplay.test.js` (new)
 - proves: A-36
 - check: `npm test` (recorder keeps positions and shots of one round, playback matches), `npm run build`, screenshots of the replay; a tap skips it. Not in parallel with T-29 or T-37 work on the same files.
 
 ## T-39 Owner phone test of the tower
-- status: todo
+- status: dropped (replaced by Phase 6 on 2026-11-10)
 - depends: T-33, T-34, T-36, T-37, T-38
 - owns: `harness/evidence/T-39/`
 - proves: A-37
 - check: debug APK on the owner phone; the owner plays 10 minutes against the bot and reports: crash or not, FPS, and "one more match" yes or no; result written to the PRD.
+
+# Phase 6: delivery (planned 2026-11-10)
+
+The owner gave the project to Claude on 2026-11-10: "make it a delivery ready game". Claude decides; see PRD Phase 6.
+Phase 5 tasks T-29 to T-39 are dropped: the tower lab was built, the owner said its look is good, and T-40 made it the match.
+What Phase 5 still wanted lives here: bot (T-44), replay (T-45), phone run (T-43). Online (T-23 to T-27) waits until T-48.
+
+## T-40 Tower match in the game
+- status: done
+- depends: none
+- owns: `src/tower/`, `src/scenes/TowerScene.js`, `src/main.js`
+- proves: A-38
+- check: `npm test`, `npm run build`, browser run at 891x411 from the menu to the result screen. Evidence: `harness/evidence/T-40/report.md`.
+
+## T-41 Menu and result screen show only what works
+- status: todo
+- depends: T-40
+- owns: `src/scenes/MenuScene.js`, `src/config/versusMatchMode.js`, `src/scenes/GameOverScene.js`, their tests
+- proves: A-39
+- check: `npm test`, `npm run build`; the menu has no VS FRIEND cell and no P2 picker; the result screen has no DODGED tile; screenshots at 891x411 and 844x390.
+
+## T-42 Remove the old match code
+- status: todo
+- depends: T-41
+- owns: `src/scenes/VersusGameScene.js`, `src/scenes/versus/` (keep `versusHeroLayer.js`), `src/scenes/versusArena.js`, `src/scenes/VersusRoundManager.js`, `src/ai/`, `src/ui/VersusHUD.js`, `src/core/VersusInput.js`, `src/systems/`, `src/entities/`, their tests, `docs/GAME_DESIGN.md`, `docs/ARCHITECTURE.md`, `AGENTS.md` ("What this is")
+- proves: A-40
+- check: `npm test`, `npm run build`; a usage map from `index.html` shows no unused module; the docs describe the tower match.
+
+## T-43 Phone run
+- status: todo
+- depends: T-40
+- owns: `harness/evidence/T-43/`
+- proves: A-41
+- check: debug APK on a real phone over adb: FPS overlay average during 10 minutes of play, every touch control works (stick, JUMP, SHOOT, pause, ladder, locker), no crash. Needs a phone on adb; an agent cannot hold the phone, so the play part needs a person.
+
+## T-44 Bot levels
+- status: todo
+- depends: T-40
+- owns: `src/tower/towerBot.js` (move the bot out of `towerWorld.js`), `src/tower/towerWorld.js`
+- proves: A-42
+- check: three levels (easy, normal, hard) that differ in reaction time and hearing; the level rises after a player win and falls after a loss; a scripted run of 5 matches per level with no stall over 10 s.
+
+## T-45 Reveal replay
+- status: todo
+- depends: T-40
+- owns: `src/tower/towerReplay.js`, `src/scenes/TowerScene.js`
+- proves: A-43
+- check: after each knockout the last 4 s play again with the lights on and both fighters visible; a tap skips it; browser screenshots.
+
+## T-46 Sounds of the tower
+- status: todo
+- depends: T-40
+- owns: `src/audio/synthAudio.js`, `src/audio/AudioManager.js`, `src/scenes/TowerScene.js`
+- proves: A-44
+- check: own sounds for footstep, landing, pickup, flare, trap, locker and lights on; the bot's sounds are quieter with distance; `npm test`.
+
+## T-47 Wins that count
+- status: todo
+- depends: T-41
+- owns: `src/config/progress.js`, `src/scenes/MenuScene.js`, `src/scenes/GameOverScene.js`
+- proves: A-45
+- check: wins and the best win streak are saved on the device; a hero or a hat unlocks at set win counts; nothing is sold; `npm test`.
+
+## T-48 Store readiness
+- status: todo
+- depends: T-42, T-43
+- owns: `android/` (name, icon, version), `docs/STORE.md`, `docs/PRIVACY.md`
+- proves: A-46
+- check: release build passes; store text, screenshots and a privacy note (no data leaves the device) are ready; signing and the Play account are steps for a person, listed in `docs/STORE.md`.

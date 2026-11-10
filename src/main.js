@@ -1,7 +1,7 @@
 import { Game } from "./core/Game.js";
 import { loadSettings } from "./config/settings.js";
 import { MenuScene } from "./scenes/MenuScene.js";
-import { VersusGameScene } from "./scenes/VersusGameScene.js";
+import { TowerScene } from "./scenes/TowerScene.js";
 import { GameOverScene } from "./scenes/GameOverScene.js";
 import { AudioManager } from "./audio/AudioManager.js";
 import { MusicManager } from "./audio/MusicManager.js";
@@ -33,9 +33,11 @@ function boot() {
   game.audioManager = audioManager;
   game.musicManager = musicManager;
   game.sceneData = {};
+  // Dev handle for checks from the browser console.
+  if (import.meta.env.DEV) window.__game = game;
 
   game.registerScene("menu", new MenuScene());
-  game.registerScene("versus", new VersusGameScene());
+  game.registerScene("versus", new TowerScene());
   game.registerScene("game_over", new GameOverScene());
   // Bounded wait for the bundled fonts so the first frame is not drawn in a fallback face.
   loadGameFonts(800).then(() => {

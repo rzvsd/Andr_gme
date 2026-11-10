@@ -1,5 +1,5 @@
-// Tower lab data: the arena layout and the weapons of direction B "Tower" (harness Phase 5).
-// Dev-only, like the hero lab. World units are the hero rig's units (a fighter is about 1.9 tall).
+// Tower data: the arena layout and the weapons of the match (direction B "Tower", harness Phase 5).
+// World units are the hero rig's units (a fighter is about 1.9 tall).
 
 export const TOWER = Object.freeze({
   half: 40, // the tower spans x = -40 .. 40
@@ -63,10 +63,12 @@ export const PICKUPS = onLevel([
   { x: -20, level: 5, weapon: "wide" },
 ]);
 
-export const SPAWNS = Object.freeze([
-  { x: -13, y: TOWER.floorGap, facing: 1 },
-  { x: 4, y: TOWER.floorGap * 2, facing: -1 },
-]);
+// Player 1 starts on the left; player 2 starts at the mirror point. The start changes each round.
+export const SPAWNS = Object.freeze(
+  [{ x: -30, level: 1 }, { x: -20, level: 5 }, { x: -30, level: 3 }, { x: -24, level: 0 }].map(({ x, level }) =>
+    [{ x, y: level * TOWER.floorGap, facing: 1 }, { x: -x, y: level * TOWER.floorGap, facing: -1 }]
+  )
+);
 
 // revealMs: how long a shot shows the shooter. uses: shots per pickup (the base gun refills).
 export const WEAPONS = Object.freeze({
