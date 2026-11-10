@@ -357,8 +357,8 @@ function plateScreen(plate, daily = false) {
           let wait = 6;
           stop();
           timer = setInterval(() => {
-            if (wait-- > 0) return;
-            play.nudge(da, dp);
+            if (!node.isConnected) stop();
+            else if (wait-- <= 0) play.nudge(da, dp);
           }, 55);
         },
         onpointerup: stop,
@@ -459,6 +459,8 @@ function plateScreen(plate, daily = false) {
         store.save();
       }
       if (store.data.streak > 1) notes.push(`${store.data.streak} days in a row`);
+    } else if (result.first && totals().solved === COUNT) {
+      notes.push("The atlas is complete");
     } else if (!nextWasOpen && chapterOpen(chapterOf(n) + 1)) {
       notes.push(`${CHAPTERS[chapterOf(n) + 1]} is open`);
     }

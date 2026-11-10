@@ -36,7 +36,7 @@ Shift for bigger steps), Enter draws, H gives a hint, N takes a new sheet, Esc g
 
 There is no game engine, no image and no audio file in the game. Under 3,000 lines of plain JavaScript
 lay out the skies, draw the charts on a canvas and make the sounds with the Web Audio API. The game
-itself is a 20 kB download (gzipped), plus the typefaces. The two serif
+itself is a 23 kB download (gzipped), plus the typefaces. The two serif
 typefaces (EB Garamond and Cormorant Garamond, both under the SIL Open Font License) are the only
 things that were not written here.
 
