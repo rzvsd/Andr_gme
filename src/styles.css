@@ -1,0 +1,497 @@
+:root {
+  --desk: #070b18;
+  --ink: #efe6cf;
+  --dim: rgba(239, 230, 207, 0.66);
+  --line: rgba(239, 230, 207, 0.26);
+  --gold: #e8b84a;
+  --serif: "EB Garamond", Georgia, "Times New Roman", serif;
+  --display: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: radial-gradient(120% 90% at 50% 38%, #0e1733 0%, var(--desk) 72%) fixed;
+  color: var(--ink);
+  font: 17px/1.3 var(--serif);
+  overflow: hidden;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  height: 100vh;
+  height: 100dvh;
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+}
+
+.screen {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: max(env(safe-area-inset-top), 4px) 0 max(env(safe-area-inset-bottom), 12px);
+  animation: turn 0.26s ease-out;
+}
+
+@keyframes turn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  margin: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.btn {
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-size: 1.06rem;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+}
+
+.btn.primary {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #0a1126;
+  font-weight: 600;
+}
+
+.btn:disabled,
+.dial button:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.btn:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 10px;
+}
+
+.row.three {
+  grid-auto-flow: row;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr);
+}
+
+.row.three .btn {
+  padding: 2px 6px;
+  font-size: 1rem;
+  line-height: 1.05;
+  letter-spacing: 0.08em;
+  white-space: normal;
+}
+
+/* The sheet */
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+canvas.sheet {
+  display: block;
+  touch-action: none;
+  box-shadow:
+    0 12px 44px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(239, 230, 207, 0.1);
+}
+
+.plate canvas.sheet {
+  cursor: crosshair;
+}
+
+/* Top bar */
+
+.bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 58px;
+  padding: 4px 14px 8px;
+}
+
+.link {
+  justify-self: start;
+  min-height: 44px;
+  padding: 0 8px 0 0;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.heading {
+  text-align: center;
+  line-height: 1.12;
+}
+
+.heading small {
+  display: block;
+  color: var(--dim);
+  font-size: 0.86rem;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.2em;
+}
+
+.heading em {
+  font: italic 500 1.36rem var(--display);
+}
+
+.tally {
+  justify-self: end;
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  color: var(--dim);
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+.stars {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.stars svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 1.2;
+}
+
+.stars svg.on {
+  fill: var(--gold);
+}
+
+/* Controls under the sheet */
+
+.desk {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px 0;
+}
+
+.ink {
+  height: 3px;
+  background: rgba(239, 230, 207, 0.14);
+}
+
+.ink i {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+  transform-origin: left;
+}
+
+.controls,
+.card {
+  display: grid;
+  gap: 10px;
+  min-height: 112px;
+  align-content: end;
+}
+
+.dials {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.dial {
+  display: grid;
+  grid-template-columns: 46px 1fr 46px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+.dial button {
+  height: 46px;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.dial output {
+  display: grid;
+  text-align: center;
+  line-height: 1.05;
+}
+
+.dial small {
+  color: var(--dim);
+  font-size: 0.76rem;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.2em;
+}
+
+.dial b {
+  font-size: 1.16rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.card {
+  gap: 6px;
+  text-align: center;
+}
+
+.verdict {
+  margin: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  font: italic 500 1.42rem/1.1 var(--display);
+}
+
+.verdict .stars svg {
+  width: 19px;
+  height: 19px;
+}
+
+.note {
+  margin: 0 0 4px;
+  min-height: 1.1em;
+  color: var(--gold);
+  font-size: 0.95rem;
+  line-height: 1.1;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.16em;
+}
+
+/* Title */
+
+.masthead {
+  padding: 16px 0 12px;
+  text-align: center;
+}
+
+h1 {
+  margin: 0;
+  padding-left: 0.36em;
+  font: 600 clamp(2.3rem, 11vw, 3.7rem) / 1 var(--display);
+  letter-spacing: 0.36em;
+  text-transform: uppercase;
+}
+
+.title .actions {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px 0;
+}
+
+.title .btn.primary {
+  min-height: 52px;
+  font-size: 1.16rem;
+}
+
+/* Atlas */
+
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 14px 24px;
+  overscroll-behavior: contain;
+}
+
+.chapter h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 18px 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  font: italic 500 1.56rem var(--display);
+}
+
+.chapter h2 span {
+  min-width: 1.7em;
+  color: var(--gold);
+  font: 600 0.92rem var(--serif);
+  letter-spacing: 0.16em;
+}
+
+.chapter h2 small {
+  margin-left: auto;
+  color: var(--dim);
+  font: 400 0.92rem var(--serif);
+}
+
+.chapter.shut h2 {
+  color: var(--dim);
+  border-bottom-style: dashed;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px 10px;
+}
+
+.cell {
+  display: grid;
+  gap: 5px;
+  padding: 0;
+}
+
+.cell canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background: #121c3c;
+  box-shadow: 0 0 0 1px rgba(239, 230, 207, 0.16);
+}
+
+.cell.solved canvas {
+  box-shadow: 0 0 0 1px rgba(232, 184, 74, 0.7);
+}
+
+.cell .meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 16px;
+  color: var(--dim);
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+}
+
+.cell .meta b {
+  font-weight: 400;
+}
+
+.cell .stars svg {
+  width: 11px;
+  height: 11px;
+}
+
+.colophon {
+  margin: 34px auto 6px;
+  max-width: 30em;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-style: italic;
+  text-align: center;
+}
+
+.colophon p {
+  margin: 0 0 8px;
+}
+
+@media (max-height: 640px) {
+  .bar {
+    min-height: 50px;
+    padding-bottom: 4px;
+  }
+  .desk {
+    gap: 8px;
+    padding-top: 8px;
+  }
+  .btn,
+  .dial button {
+    min-height: 42px;
+    height: 42px;
+  }
+  .masthead {
+    padding: 8px 0 6px;
+  }
+}
+
+/* A phone held sideways: the sheet on the left, everything else on the right. */
+@media (orientation: landscape) and (max-height: 560px) {
+  #app {
+    max-width: none;
+  }
+  .screen.plate,
+  .screen.title {
+    display: grid;
+    grid-template-columns: auto minmax(250px, 420px);
+    grid-template-rows: auto 1fr;
+    justify-content: center;
+    column-gap: 16px;
+    padding: 6px max(env(safe-area-inset-right), 10px) 6px max(env(safe-area-inset-left), 10px);
+  }
+  .screen.plate .stage,
+  .screen.title .stage {
+    grid-row: 1 / 3;
+    grid-column: 1;
+    width: calc((100dvh - 20px) * 0.75);
+    height: calc(100dvh - 20px);
+  }
+  .bar {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    padding: 0;
+  }
+  .bar .heading {
+    text-align: right;
+  }
+  .bar .tally {
+    grid-column: 1 / 3;
+    grid-auto-flow: column;
+    justify-content: space-between;
+    width: 100%;
+  }
+  .desk,
+  .title .actions {
+    align-self: end;
+    padding: 0;
+  }
+  .masthead {
+    align-self: center;
+  }
+  h1 {
+    font-size: 2.2rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen {
+    animation: none;
+  }
+}

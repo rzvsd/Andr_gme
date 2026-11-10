@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.DS_Store
+Thumbs.db
+*.log
+
+# Claude Code personal settings
+.claude/settings.local.json
+
+# Signing material and env files never belong in git
+*.jks
+*.keystore
+keystore.properties
+.env*
+
+# Local leftovers of the other branches that share this folder
+/android/
+/harness/
+/reports/
+/research_notes/
+/.ruff_cache/
